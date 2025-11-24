@@ -1,0 +1,57 @@
+name = "Penguin"
+uuid = "c60b9c7f-4ba0-4cf4-9267-bf5bcdb56d21"
+authors = ["Fastaxx <Fastaxx@github.com> and contributors"]
+version = "1.0.0-DEV"
+
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+CartesianGeometry = "5961ddb3-e46d-41f1-806c-0197ba873d0b"
+ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
+Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
+DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
+GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
+ImplicitIntegration = "bc256489-3a69-4a66-afc4-127cc87e6182"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+IterativeSolvers = "42fd0dbc-a981-5370-80f2-aaf504508153"
+LibGEOS = "a90b1aa1-3769-5649-ba7e-abc5a9d163eb"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
+LsqFit = "2fda8390-95c7-5789-9bda-21331edee243"
+QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
+Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+
+[compat]
+CSV = "0.10.15"
+CairoMakie = "0.13.1"
+ColorSchemes = "3.29.0"
+Colors = "0.13.0"
+DSP = "0.8.3"
+DataFrames = "1.7.0"
+FFTW = "1.8.1"
+GeoInterface = "1.4.1"
+GeometryBasics = "0.5.9"
+Interpolations = "0.15.1"
+LibGEOS = "0.9.4"
+LinearSolve = "3.19.2"
+LsqFit = "0.15.0"
+QuadGK = "2.11.2"
+Roots = "2.2.5"
+SpecialFunctions = "2.5.0"
+Statistics = "1.11.1"
+WriteVTK = "1.21.1"
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

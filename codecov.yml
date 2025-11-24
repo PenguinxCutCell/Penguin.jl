@@ -1,0 +1,4 @@
+ignore:
+  - "src/vizualize.jl"
+  - "src/vtk.jl"
+  - "src/vizualize_mov.jl"

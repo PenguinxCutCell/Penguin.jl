@@ -1,0 +1,5 @@
+[deps]
+CartesianGeometry = "5961ddb3-e46d-41f1-806c-0197ba873d0b"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
+Penguin = "c60b9c7f-4ba0-4cf4-9267-bf5bcdb56d21"
