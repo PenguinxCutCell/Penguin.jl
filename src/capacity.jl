@@ -36,7 +36,7 @@ mutable struct Capacity{N} <: AbstractCapacity
 end
 
 """
-    Capacity(body::Function, mesh::CartesianMesh; method::String = "VOFI")
+    Capacity(body::Function, mesh::CartesianMesh; method::String = "VOFI", integration_method::Symbol = :vofi)
 
 Compute the capacity of a body in a given mesh using a specified method.
 
@@ -44,15 +44,16 @@ Compute the capacity of a body in a given mesh using a specified method.
 - `body::Function`: The body for which to compute the capacity.
 - `mesh::CartesianMesh`: The mesh in which the body is located.
 - `method::String`: The method to use for computing the capacity. Default is "VOFI".
+- `integration_method::Symbol`: Backend for VOFI integration (`:vofi` by default).
 
 # Returns
 - `Capacity{N}`: The capacity of the body.
 """
-function Capacity(body::Function, mesh::AbstractMesh; method::String = "VOFI", compute_centroids::Bool = true)
+function Capacity(body::Function, mesh::AbstractMesh; method::String = "VOFI", integration_method::Symbol = :vofi, compute_centroids::Bool = true)
 
     if method == "VOFI"
         #println("When using VOFI, the body must be a scalar function.")
-        A, B, V, W, C_ω, C_γ, Γ, cell_types = VOFI(body, mesh; compute_centroids=compute_centroids)
+        A, B, V, W, C_ω, C_γ, Γ, cell_types = VOFI(body, mesh; compute_centroids=compute_centroids, integration_method=integration_method)
         N = length(A)
         return Capacity{N}(A, B, V, W, C_ω, C_γ, Γ, cell_types, mesh, body)
     elseif method == "ImplicitIntegration"
@@ -66,7 +67,7 @@ end
 # VOFI implementation
 
 """
-    VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true)
+    VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true, integration_method::Symbol = :vofi)
 
 Compute capacity quantities based on VOFI for a given body and mesh.
 
@@ -74,11 +75,12 @@ Compute capacity quantities based on VOFI for a given body and mesh.
 - `body::Function`: The level set function defining the domain
 - `mesh::AbstractMesh`: The mesh on which to compute the VOFI quantities
 - `compute_centroids::Bool`: Whether to compute interface centroids
+- `integration_method::Symbol`: Backend for CartesianGeometry.integrate (e.g. `:vofi` or `:vofijul`)
 
 # Returns
 - Tuple of capacity components (A, B, V, W, C_ω, C_γ, Γ, cell_types)
 """
-function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true)
+function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true, integration_method::Symbol = :vofi)
     N = length(mesh.nodes)
     nc = nC(mesh)
     
@@ -88,7 +90,7 @@ function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true
     # Get volume capacity, barycenters, interface length and cell types in a single call
     # This avoids redundant computations and memory allocations
     Vs, bary, interface_length, cell_types = CartesianGeometry.integrate(
-        Tuple{0}, body, mesh.nodes, Float64, zero
+        Tuple{0}, body, mesh.nodes, Float64, zero; method=integration_method
     )
     
     # Store cell centroids
@@ -100,9 +102,9 @@ function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true
     
     # Do dimension-specific calculations in one shot
     # Compute face capacities, center line capacities, and staggered volumes
-    As = CartesianGeometry.integrate(Tuple{1}, body, mesh.nodes, Float64, zero)
-    Ws = CartesianGeometry.integrate(Tuple{0}, body, mesh.nodes, Float64, zero, bary)
-    Bs = CartesianGeometry.integrate(Tuple{1}, body, mesh.nodes, Float64, zero, bary)
+    As = CartesianGeometry.integrate(Tuple{1}, body, mesh.nodes, Float64, zero; method=integration_method)
+    Ws = CartesianGeometry.integrate(Tuple{0}, body, mesh.nodes, Float64, zero, bary; method=integration_method)
+    Bs = CartesianGeometry.integrate(Tuple{1}, body, mesh.nodes, Float64, zero, bary; method=integration_method)
     
     # Create appropriate-sized tuples based on dimension
     # This avoids the dimension-specific if/elseif blocks
@@ -849,4 +851,3 @@ function clamp_merge_small_cells!(cap::Capacity{N}; tol::Float64=1e-12) where N
 
     return merges
 end
-

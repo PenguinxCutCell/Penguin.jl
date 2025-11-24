@@ -14,7 +14,7 @@ radius, center = ly/3, (lx/2, ly/2, lz/2) #.+ (0.01, 0.01, 0.01)
 circle = (x, y, z) -> -(sqrt((x-center[1])^2 + (y-center[2])^2 + (z-center[3])^2) - radius)
 
 # Define the capacity
-capacity = Capacity(circle, mesh)
+capacity = Capacity(circle, mesh; method="VOFI", integration_method=:vofijul)
 
 # Define the operators
 operator = DiffusionOps(capacity)

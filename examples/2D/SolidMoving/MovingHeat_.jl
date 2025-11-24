@@ -74,13 +74,13 @@ function source_term(x, y, z, t)
 end
 
 # Define the Space-Time mesh
-Δt = 0.01
+Δt = 0.00001
 Tstart = 0.01  # Start at small positive time to avoid t=0 singularity
-Tend = 0.04
+Tend = 0.1
 STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
 
 # Define the capacity
-capacity = Capacity(oscillating_body, STmesh)
+capacity = Capacity(oscillating_body, STmesh; compute_centroids=true, method="VOFI", integration_method=:vofijul)
 
 # Define the operators
 operator = DiffusionOps(capacity)
@@ -132,7 +132,7 @@ u0 = vcat(u0ₒ, u0ᵧ)
 solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, robin_bc, Δt, u0, mesh, "BE")
 
 # Solve the problem
-solve_MovingDiffusionUnsteadyMono!(solver, Fluide, oscillating_body, Δt, Tstart, Tend, bc_b, robin_bc, mesh, "BE"; method=Base.:\)
+solve_MovingDiffusionUnsteadyMono!(solver, Fluide, oscillating_body, Δt, Tstart, Tend, bc_b, robin_bc, mesh, "BE"; method=Base.:\, geometry_method="VOFI", integration_method=:vofijul)
 
 # Check errors based on last body 
 body_tend = (x, y,_=0) ->  begin

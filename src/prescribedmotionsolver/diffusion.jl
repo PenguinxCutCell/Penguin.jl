@@ -249,7 +249,7 @@ function solve_MovingDiffusionUnsteadyMono!(s::Solver, phase::Phase, body::Funct
         t += Δt
         println("Time : $(t)")
         STmesh = Penguin.SpaceTimeMesh(mesh, [t, t+Δt], tag=mesh.tag)
-        capacity = Capacity(body, STmesh; compute_centroids=true, method=geometry_method)
+        capacity = Capacity(body, STmesh; kwargs...)
         operator = DiffusionOps(capacity)
 
         s.A = A_mono_unstead_diff_moving(operator, capacity, phase.Diffusion_coeff, bc, scheme)

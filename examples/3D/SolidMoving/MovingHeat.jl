@@ -29,7 +29,7 @@ function oscillating_body(x, y, z, t)
     R_t = radius_mean + radius_amp * sin(2π * t / period)
     
     # Return signed distance function to sphere
-    return (sqrt((x - x_0)^2 + (y - y_0)^2 + (z - z_0)^2) - R_t)
+    return -(sqrt((x - x_0)^2 + (y - y_0)^2 + (z - z_0)^2) - R_t)
 end
 
 # Analytical solution for 3D
@@ -69,17 +69,20 @@ function source_term(x, y, z, t)
     # Laplacian term (3 dimensions)
     term2 = 3 * π^2 * D * (1 + 0.5 * sin(2π * t / period)) * cos(π * x) * cos(π * y) * cos(π * z)
     
-    return term1 + term2
+    return 0.0
 end
+# Allow calls that provide both the cell time coordinate and the evaluation time
+source_term(x, y, z, t_cell, t_eval) = source_term(x, y, z, t_eval)
+
 
 # Define the Space-Time mesh
 Δt = 0.01
 Tstart = 0.01  # Start at small positive time to avoid t=0 singularity
-Tend = 0.04
+Tend = 0.1
 STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
 
 # Define the capacity
-capacity = Capacity(oscillating_body, STmesh; method="ImplicitIntegration")
+capacity = Capacity(oscillating_body, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
 
 # Define the operators
 operator = DiffusionOps(capacity)
@@ -94,10 +97,10 @@ bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(
 ))
 
 # Dirichlet boundary condition for the sphere interface
-robin_bc = Dirichlet((x, y, z, t) -> Φ_ana(x, y, z, t))
+robin_bc = Dirichlet(0.0)
 
 # Define the phase with source term from manufactured solution
-Fluide = Phase(capacity, operator, source_term, (x,y,z) -> D)
+Fluide = Phase(capacity, operator, source_term, (x,y,z,t) -> D)
 
 # Initialize with analytical solution at t=Tstart
 function init_condition(x, y, z)
@@ -116,7 +119,7 @@ for i in 1:nx+1
             x = mesh.nodes[1][i]
             y = mesh.nodes[2][j]
             z = mesh.nodes[3][k]
-            u0ₒ[idx] = init_condition(x, y, z)
+            u0ₒ[idx] = 1.0
         end
     end
 end
@@ -127,7 +130,7 @@ u0 = vcat(u0ₒ, u0ᵧ)
 solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, robin_bc, Δt, u0, mesh, "BE")
 
 # Solve the problem
-solve_MovingDiffusionUnsteadyMono!(solver, Fluide, oscillating_body, Δt, Tstart, Tend, bc_b, robin_bc, mesh, "BE"; method=Base.:\)
+solve_MovingDiffusionUnsteadyMono!(solver, Fluide, oscillating_body, Δt, Tstart, Tend, bc_b, robin_bc, mesh, "BE"; method=Base.:\, geometry_method="VOFI", integration_method=:vofijul, compute_centroids=false)
 
 # Check errors based on last body 
 body_tend = (x, y, z, _=0) ->  begin
