@@ -6,7 +6,7 @@ using CSV, DataFrames
 
 ### 3D Test Case: Monophasic Unsteady Diffusion Equation inside an oscillating Sphere with Manufactured Solution
 # Define the mesh - larger domain to accommodate oscillation
-nx, ny, nz = 32, 32, 32  # Lower resolution for 3D
+nx, ny, nz = 4, 4, 4  # Lower resolution for 3D
 lx, ly, lz = 4.0, 4.0, 4.0  
 x0, y0, z0 = 0.0, 0.0, 0.0
 domain = ((x0, lx), (y0, ly), (z0, lz))
@@ -29,7 +29,7 @@ function oscillating_body(x, y, z, t)
     R_t = radius_mean + radius_amp * sin(2π * t / period)
     
     # Return signed distance function to sphere
-    return -(sqrt((x - x_0)^2 + (y - y_0)^2 + (z - z_0)^2) - R_t)
+    return (sqrt((x - x_0)^2 + (y - y_0)^2 + (z - z_0)^2) - R_t)
 end
 
 # Analytical solution for 3D
@@ -76,13 +76,13 @@ source_term(x, y, z, t_cell, t_eval) = source_term(x, y, z, t_eval)
 
 
 # Define the Space-Time mesh
-Δt = 0.01
+Δt = 0.5*(lx/nx)^2
 Tstart = 0.01  # Start at small positive time to avoid t=0 singularity
 Tend = 0.1
 STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
 
 # Define the capacity
-capacity = Capacity(oscillating_body, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
+capacity = Capacity(oscillating_body, STmesh; method="ImplicitIntegration",compute_centroids=false, tol=1e-1)
 
 # Define the operators
 operator = DiffusionOps(capacity)
@@ -130,7 +130,7 @@ u0 = vcat(u0ₒ, u0ᵧ)
 solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, robin_bc, Δt, u0, mesh, "BE")
 
 # Solve the problem
-solve_MovingDiffusionUnsteadyMono!(solver, Fluide, oscillating_body, Δt, Tstart, Tend, bc_b, robin_bc, mesh, "BE"; method=Base.:\, geometry_method="VOFI", integration_method=:vofijul, compute_centroids=false)
+solve_MovingDiffusionUnsteadyMono!(solver, Fluide, oscillating_body, Δt, Tstart, Tend, bc_b, robin_bc, mesh, "BE"; method=Base.:\, geometry_method="ImplicitIntegration", integration_method=:vofijul, compute_centroids=false)
 
 # Check errors based on last body 
 body_tend = (x, y, z, _=0) ->  begin

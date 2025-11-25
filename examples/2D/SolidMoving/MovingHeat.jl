@@ -37,11 +37,11 @@ end
 # Define the Space-Time mesh
 Δt = 1.0*(lx/nx)^2
 Tstart = 0.0
-Tend = 1.0
+Tend = 5.0
 STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
 
 # Define the capacity
-capacity = Capacity(body, STmesh; compute_centroids=false)
+capacity = Capacity(body, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
 
 # Define the operators
 operator = DiffusionOps(capacity)
@@ -67,7 +67,8 @@ u0 = vcat(u0ₒ, u0ᵧ)
 solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, bc1, Δt, u0, mesh, "BE")
 
 # Solve the problem
-solve_MovingDiffusionUnsteadyMono!(solver, Fluide, body, Δt, Tstart, Tend, bc_b, bc1, mesh, "BE"; method=Base.:\)
+solve_MovingDiffusionUnsteadyMono!(solver, Fluide, body, Δt, Tstart, Tend, bc_b, bc1, mesh, "BE"; method=Base.:\,  geometry_method="VOFI", integration_method=:vofijul, compute_centroids=false)
+
 
 # Plot the solution
 #plot_solution(solver, mesh, body, capacity; state_i=1)

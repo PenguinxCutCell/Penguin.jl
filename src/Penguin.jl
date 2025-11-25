@@ -4,6 +4,7 @@ using SparseArrays
 using StaticArrays
 using CartesianGeometry
 using ImplicitIntegration
+using ImplicitCutIntegration
 using LinearAlgebra
 using IterativeSolvers
 using CairoMakie

@@ -225,7 +225,7 @@ function _step!(s::StreamVorticity{2};
 
     Aω = A_mono_unstead_advdiff(convection, s.capacity, s.ν,
                                  s.bc_vorticity, s.Δt, scheme)
-    bω = b_mono_unstead_advdiff(convection, s.source, s.capacity,
+    bω = b_mono_unstead_advdiff(convection, s.source, s.capacity, s.ν,
                                  s.bc_vorticity, s.ω, s.Δt, s.time, scheme)
 
     BC_border_mono!(Aω, bω, s.bc_vorticity_border, s.capacity.mesh)
