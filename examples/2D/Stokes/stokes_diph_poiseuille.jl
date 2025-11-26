@@ -20,13 +20,13 @@ interface_y = 0.0
 fluid1_body = (x, y, _t=0.0) -> y - interface_y
 fluid2_body = (x, y, _t=0.0) -> interface_y - y
 
-cap_ux₁ = Capacity(fluid1_body, mesh_ux; compute_centroids=false)
-cap_uy₁ = Capacity(fluid1_body, mesh_uy; compute_centroids=false)
-cap_p₁  = Capacity(fluid1_body, mesh_p; compute_centroids=false)
+cap_ux₁ = Capacity(fluid1_body, mesh_ux; compute_centroids=true)
+cap_uy₁ = Capacity(fluid1_body, mesh_uy; compute_centroids=true)
+cap_p₁  = Capacity(fluid1_body, mesh_p;  compute_centroids=true)
 
-cap_ux₂ = Capacity(fluid2_body, mesh_ux; compute_centroids=false)
-cap_uy₂ = Capacity(fluid2_body, mesh_uy; compute_centroids=false)
-cap_p₂  = Capacity(fluid2_body, mesh_p; compute_centroids=false)
+cap_ux₂ = Capacity(fluid2_body, mesh_ux; compute_centroids=true)
+cap_uy₂ = Capacity(fluid2_body, mesh_uy; compute_centroids=true)
+cap_p₂  = Capacity(fluid2_body, mesh_p;  compute_centroids=true)
 
 op_ux1 = DiffusionOps(cap_ux₁)
 op_uy1 = DiffusionOps(cap_uy₁)

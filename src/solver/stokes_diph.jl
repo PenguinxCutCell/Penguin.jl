@@ -259,14 +259,18 @@ function assemble_stokes_diph!(s::StokesDiph)
     # [[βσ·n]] = β₂σ₂·n - β₁σ₁·n = g (traction continuity)
     A[row_fx-1+1:row_fx-1+nu_x, off_u1ωx+1:off_u1ωx+nu_x] = -spdiagm(0 => flux_vec_x1) * Txω_a
     A[row_fx-1+1:row_fx-1+nu_x, off_u1γx+1:off_u1γx+nu_x] = -spdiagm(0 => flux_vec_x1) * Txγ_a
+    A[row_fx-1+1:row_fx-1+nu_x, off_p1+1:off_p1+np]      .=  spdiagm(0 => flux_vec_x1)  # +β₁(-p₁) contribution
     A[row_fx-1+1:row_fx-1+nu_x, off_u2ωx+1:off_u2ωx+nu_x] =  spdiagm(0 => flux_vec_x2) * Txω_b
     A[row_fx-1+1:row_fx-1+nu_x, off_u2γx+1:off_u2γx+nu_x] =  spdiagm(0 => flux_vec_x2) * Txγ_b
+    A[row_fx-1+1:row_fx-1+nu_x, off_p2+1:off_p2+np]      .= -spdiagm(0 => flux_vec_x2)  # -β₂(-p₂) term
     b[row_fx:row_fx+nu_x-1] = safe_build_g(data_a.op_ux, flux, data_a.cap_px, nothing)
 
     A[row_fy-1+1:row_fy-1+nu_y, off_u1ωy+1:off_u1ωy+nu_y] = -spdiagm(0 => flux_vec_y1) * Tyω_a
     A[row_fy-1+1:row_fy-1+nu_y, off_u1γy+1:off_u1γy+nu_y] = -spdiagm(0 => flux_vec_y1) * Tyγ_a
+    A[row_fy-1+1:row_fy-1+nu_y, off_p1+1:off_p1+np]      .=  spdiagm(0 => flux_vec_y1)
     A[row_fy-1+1:row_fy-1+nu_y, off_u2ωy+1:off_u2ωy+nu_y] =  spdiagm(0 => flux_vec_y2) * Tyω_b
     A[row_fy-1+1:row_fy-1+nu_y, off_u2γy+1:off_u2γy+nu_y] =  spdiagm(0 => flux_vec_y2) * Tyγ_b
+    A[row_fy-1+1:row_fy-1+nu_y, off_p2+1:off_p2+np]      .= -spdiagm(0 => flux_vec_y2)
     b[row_fy:row_fy+nu_y-1] = safe_build_g(data_a.op_uy, flux, data_a.cap_py, nothing)
 
     # Boundary conditions

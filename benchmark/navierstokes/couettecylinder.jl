@@ -246,7 +246,7 @@ if !isempty(profile_points)
     axp = Axis(fig_profile[1, 1], xlabel="r", ylabel="uθ", title="Tangential velocity profile")
     scatter!(axp, r_sorted, uθ_num_sorted; color=:blue, markersize=6, label="numerical points")
     lines!(axp, r_sorted, uθ_exact_sorted; color=:red, linestyle=:dash, label="exact")
-    axislegend(axp, position=:rb)
+    axislegend(axp, position=:rt)
     display(fig_profile)
     save("stokes2d_couettecylinder_profile.png", fig_profile)
 end

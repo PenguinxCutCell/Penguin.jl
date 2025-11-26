@@ -89,7 +89,7 @@ function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true
     
     # Get volume capacity, barycenters, interface length and cell types in a single call
     # This avoids redundant computations and memory allocations
-    Vs, bary, interface_length, cell_types = CartesianGeometry.integrate(
+    Vs, bary, interface_length, cell_types, bary_interface = CartesianGeometry.integrate(
         Tuple{0}, body, mesh.nodes, Float64, zero; method=integration_method
     )
     
@@ -164,6 +164,7 @@ function computeInterfaceCentroids(mesh::Union{Mesh{N}, SpaceTimeMesh{N}}, body)
     indices = CartesianIndices(ntuple(i -> 1:dims[i], N))
     
     # Process each cell
+    linear_idx = 1
     for idx in indices
         # Calculate linear index based on dimension
         if N == 1
