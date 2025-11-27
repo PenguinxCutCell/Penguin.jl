@@ -175,7 +175,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
             return xx - x_interp
         end
         STmesh = SpaceTimeMesh(mesh, [tₙ, tₙ₊₁], tag=mesh.tag)
-        capacity = Capacity(body, STmesh; compute_centroids=false)
+        capacity = Capacity(body, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
         operator = DiffusionOps(capacity)
         phase = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
 

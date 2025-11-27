@@ -27,7 +27,7 @@ Tend = 0.01
 STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
 
 # Define the capacity
-capacity = Capacity(body, STmesh)
+capacity = Capacity(body, STmesh; method="VOFI", integration_method=:vofijul)
 
 # Extract initial Height Vₙ₊₁ and Vₙ from capacity
 # For a 3D space-time problem, capacity.A has index = length(dims) = 4
@@ -77,9 +77,11 @@ stef_cond = InterfaceConditions(nothing, FluxJump(1.0, 1.0, ρ*L))
 
 # Define the source term and diffusion coefficient
 f = (x, y, z, t) -> 0.0
-K = (x, y, z) -> 1.0
+K = (x, y, z, t) -> 1.0
 
-Fluide = Phase(capacity, operator, f, K)
+source(x, y, z, t, teval) = f(x, y, z, teval)
+
+Fluide = Phase(capacity, operator, source, K)
 
 # Initial condition - zero temperature everywhere
 n_total = (nx+1)*(ny+1)*(nz+1)
@@ -129,3 +131,4 @@ if !isempty(solver.states)
     temp_bulk = final_state[1:n_total]
     println("Final bulk temperature: min=$(minimum(temp_bulk)), max=$(maximum(temp_bulk))")
 end
+
