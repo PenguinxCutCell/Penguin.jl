@@ -11,9 +11,14 @@ using Test
         dims1 = (8, 2)
         shape1 = Penguin.spatial_shape_from_dims(dims1)
         @test shape1 == (8,)
+
+        # 3D case
+        dims3 = (5, 6, 7, 2)  # nx, ny, nz, time stencil
+        shape3 = Penguin.spatial_shape_from_dims(dims3)
+        @test shape3 == (5, 6, 7)
     end
 
-    # column_height_profile with 1D and 2D inputs
+    # column_height_profile with 1D, 2D, and 3D inputs
     @testset "column_height_profile" begin
         v1 = [1.0, 2.0, 3.0]
     @test Penguin.column_height_profile(v1) == v1
@@ -22,6 +27,16 @@ using Test
         # sum along streamwise (rows) -> column sums
     expected = vec(sum(V2, dims=1))
     @test Penguin.column_height_profile(V2) == expected
+
+        # 3D case: sum along first dimension, return 2D matrix
+        V3 = zeros(2, 3, 4)  # nx=2, ny=3, nz=4
+        for i in 1:2, j in 1:3, k in 1:4
+            V3[i, j, k] = i + 10*j + 100*k
+        end
+        expected3 = dropdims(sum(V3, dims=1), dims=1)  # (3, 4) matrix
+        result3 = Penguin.column_height_profile(V3)
+        @test size(result3) == (3, 4)
+        @test result3 == expected3
     end
 
     # interface_positions_from_heights for 1D mesh
@@ -56,6 +71,24 @@ using Test
         @test positions ≈ expected atol=1e-12
     end
 
+    # interface_positions_from_heights for 3D mesh
+    @testset "interface_positions_from_heights 3D" begin
+        nx, ny, nz = 4, 3, 2
+        lx, ly, lz = 2.0, 1.0, 1.5
+        x0, y0, z0 = 0.0, 0.0, 0.0
+        mesh = Penguin.Mesh((nx, ny, nz), (lx, ly, lz), (x0, y0, z0))
+        # heights is a 2D matrix of (ny x nz) interface positions
+        heights = [0.1 0.2; 0.15 0.25; 0.2 0.3]  # (3, 2) matrix
+        positions = Penguin.interface_positions_from_heights(heights, mesh)
+        # positions should be a matrix with x0 + heights/(Δy*Δz)
+        Δy = mesh.nodes[2][2] - mesh.nodes[2][1]
+        Δz = mesh.nodes[3][2] - mesh.nodes[3][1]
+        x0_mesh = mesh.nodes[1][1]
+        expected = x0_mesh .+ heights ./ (Δy * Δz)
+        @test size(positions) == size(expected)
+        @test positions ≈ expected atol=1e-12
+    end
+
     # ensure_periodic!
     @testset "ensure_periodic!" begin
         v = [0.0, 1.0, 2.0]
@@ -66,4 +99,15 @@ using Test
     Penguin.ensure_periodic!(empty_v)
         @test isempty(empty_v)
     end
+
+    # ensure_periodic_3d!
+    @testset "ensure_periodic_3d!" begin
+        M = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
+        Penguin.ensure_periodic_3d!(M)
+        # Last row should equal first row
+        @test M[end, :] == M[1, :]
+        # Last column should equal first column
+        @test M[:, end] == M[:, 1]
+    end
 end
+
