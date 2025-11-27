@@ -204,6 +204,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
 
     # Time loop
     k=2
+    cfl_current = 0.0  # Track CFL for reporting
     while t<Tₑ
         # Compute interface velocity from fluxes
         W! = phase.operator.Wꜝ[1:end÷2, 1:end÷2]
@@ -222,11 +223,11 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
             time_left = Tₑ - t
             Δt_max_current = min(Δt_max, time_left)
             
-            Δt, cfl = adapt_timestep(velocity_field, mesh, cfl_target, Δt, Δt_min, Δt_max_current; 
+            Δt, cfl_current = adapt_timestep(velocity_field, mesh, cfl_target, Δt, Δt_min, Δt_max_current; 
                                   growth_factor=1.1, shrink_factor=0.8, safety_factor=0.9)
             
             push!(timestep_history, (t, Δt))
-            println("Adaptive timestep: Δt = $(round(Δt, digits=6)), CFL = $(round(cfl, digits=3))")
+            println("Adaptive timestep: Δt = $(round(Δt, digits=6)), CFL = $(round(cfl_current, digits=3))")
         end
 
         # Update the time
@@ -390,7 +391,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
 
         # Display timestep info
         if adaptive_timestep
-            println("Time step info: Δt = $(round(Δt, digits=6)), CFL = $(round(timestep_history[end][2], digits=3))")
+            println("Time step info: Δt = $(round(Δt, digits=6)), CFL = $(round(cfl_current, digits=3))")
         end
 
         push!(s.states, s.x)

@@ -30,11 +30,13 @@ STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
 capacity = Capacity(body, STmesh)
 
 # Extract initial Height Vₙ₊₁ and Vₙ from capacity
-# In 3D, capacity.A[4] contains the volume data (index 4 for 4D spacetime)
+# For a 3D space-time problem, capacity.A has index = length(dims) = 4
+# This corresponds to nx, ny, nz spatial dimensions + 1 time dimension
 dims = (nx+1, ny+1, nz+1, 2)  # spatial dims + time stencil
+cap_index = length(dims)  # = 4 for 3D+time
 
-Vₙ₊₁_block = capacity.A[4][1:end÷2, 1:end÷2]
-Vₙ_block = capacity.A[4][end÷2+1:end, end÷2+1:end]
+Vₙ₊₁_block = capacity.A[cap_index][1:end÷2, 1:end÷2]
+Vₙ_block = capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
 Vₙ = diag(Vₙ_block)
 Vₙ₊₁ = diag(Vₙ₊₁_block)
 
