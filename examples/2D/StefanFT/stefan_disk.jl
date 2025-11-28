@@ -10,6 +10,7 @@ using Statistics
 using FFTW
 using DSP
 using Roots
+using FrontCutTracking
 
 ### 2D Test Case: Frank Sphere (Stefan Problem with Circular Interface)
 ### Ice sphere growing in undercooled liquid with self-similar solution

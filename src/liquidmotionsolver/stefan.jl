@@ -4,7 +4,7 @@ function compute_volume_jacobian(mesh::Penguin.Mesh{2}, front::FrontTracker, eps
     y_faces = vcat(mesh.nodes[2][1], mesh.nodes[2][2:end])
     
     # Call Julia function directly
-    return compute_volume_jacobian(front, x_faces, y_faces, epsilon)
+    return FrontCutTracking.compute_volume_jacobian(front, x_faces, y_faces, epsilon)
 end
 
 """
@@ -185,7 +185,7 @@ function compute_geometric_segment_displacements(front::FrontTracker,
                                                  ρL::Real,
                                                  α::Real)
     intercept_jacobian, segments, _segment_normals, _segment_intercepts, segment_lengths =
-        compute_intercept_jacobian(mesh, front; density=1.0)
+        compute_intercept_jacobian(mesh.nodes, front; density=1.0)
 
     cells_idx = Tuple{Int, Int}[]
     residual_values = Float64[]

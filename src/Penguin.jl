@@ -17,25 +17,13 @@ using FFTW
 using DSP
 using Colors
 using Statistics
-using LibGEOS
-using GeoInterface
 using LinearSolve
+using FrontCutTracking
 
 # Write your package code here.
 
 include("mesh.jl")
 export Dimension, Mesh, nC, SpaceTimeMesh
-
-include("front_tracking.jl")
-export FrontTracker, create_circle!, create_rectangle!, create_ellipse!, update_geometry!, create_crystal!
-export set_markers!, get_markers, add_marker!, get_fluid_polygon, is_point_inside, get_intersection, get_markers, sdf, compute_marker_normals, compute_volume_jacobian
-export compute_capacities, fluid_cell_properties, compute_surface_capacities, compute_second_type_capacities
-export compute_intercept_jacobian, compute_segment_cell_intersections, create_segment_line, compute_segment_parameters, update_front_with_intercept_displacements!
-export compute_spacetime_capacities
-
-include("front_tracking1D.jl")
-export FrontTracker1D, compute_capacities_1d, sdf, is_point_inside
-export compute_spacetime_capacities_1d
 
 include("capacity.jl")
 export Capacity

@@ -1,6 +1,5 @@
 using Penguin
-using LibGEOS
-using GeoInterface
+using FrontCutTracking
 
 # Poisson equation inside a disk using Front Tracking
 # Define the mesh

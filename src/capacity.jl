@@ -241,7 +241,7 @@ Convert front tracking capacities to the format expected by the Capacity struct.
 function FrontTrackingToCapacity(front::FrontTracker, mesh::AbstractMesh; compute_centroids::Bool = true)
     if isa(mesh, Mesh{2}) || isa(mesh, SpaceTimeMesh{2})
         # Compute all capacities using front tracking
-        ft_capacities = compute_capacities(mesh, front)
+        ft_capacities = compute_capacities(mesh.nodes, front)
         
         # Extract dimensions
         x_nodes = mesh.nodes[1]
@@ -338,7 +338,7 @@ Convert 1D front tracking capacities to the format expected by the Capacity stru
 function FrontTracker1DToCapacity(front::FrontTracker1D, mesh::AbstractMesh; compute_centroids::Bool = true)
     if isa(mesh, Mesh{1})
         # Compute all capacities using front tracking
-        ft_capacities = compute_capacities_1d(mesh, front)
+        ft_capacities = compute_capacities_1d(mesh.nodes, front)
         
         # Extract dimensions
         x_nodes = mesh.nodes[1]
