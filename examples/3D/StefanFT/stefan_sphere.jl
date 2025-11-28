@@ -71,7 +71,7 @@ end
 println("Initial radius at t=$t_init: R=$(interface_position(t_init))")
 
 # Define the spatial mesh (3D)
-nx, ny, nz = 4, 4, 4  # Lower resolution for 3D to manage computational cost
+nx, ny, nz = 8, 8, 8  # Lower resolution for 3D to manage computational cost
 lx, ly, lz = 12.0, 12.0, 12.0
 x0, y0, z0 = -6.0, -6.0, -6.0
 Δx, Δy, Δz = lx/(nx), ly/(ny), lz/(nz)
