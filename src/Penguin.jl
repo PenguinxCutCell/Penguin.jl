@@ -8,7 +8,6 @@ using ImplicitCutIntegration
 using LinearAlgebra
 using IterativeSolvers
 using CairoMakie
-using WriteVTK
 using LsqFit
 using SpecialFunctions
 using Roots
@@ -19,6 +18,7 @@ using Colors
 using Statistics
 using LinearSolve
 using FrontCutTracking
+using VTKOutputs
 
 # Write your package code here.
 
@@ -127,9 +127,6 @@ export analyze_convergence_rates_newton, plot_timestep_history, plot_interface_e
 
 include("convergence.jl")
 export check_convergence, check_convergence_diph
-
-include("vtk.jl")
-export write_vtk
 
 include("solver/stokes.jl")
 export AbstractPressureGauge, PinPressureGauge, MeanPressureGauge

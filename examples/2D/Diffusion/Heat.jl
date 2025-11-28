@@ -1,5 +1,6 @@
 using Penguin
 using IterativeSolvers
+using VTKOutputs
 
 ### 2D Test Case : Monophasic Unsteady Diffusion Equation inside a Disk
 # Define the mesh
@@ -48,10 +49,10 @@ solver = DiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, u0, "BE") # Start by a ba
 solve_DiffusionUnsteadyMono!(solver, Fluide, Δt, Tend, bc_b, bc, "BE"; method=Base.:\)
 
 # Write the solution to a VTK file
-#write_vtk("heat", mesh, solver)
+write_vtk("heat", mesh, solver)
 
 # Plot the solution
-plot_solution(solver, mesh, circle, capacity; state_i=1)
+#plot_solution(solver, mesh, circle, capacity; state_i=1)
 
 # Animation
 animate_solution(solver, mesh, circle)

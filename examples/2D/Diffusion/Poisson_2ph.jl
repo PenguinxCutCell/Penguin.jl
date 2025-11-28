@@ -1,5 +1,6 @@
 using Penguin
 using IterativeSolvers, LinearAlgebra
+using VTKOutputs
 
 ### 2D Test Case : Diphasic Steady Diffusion Equation inside a Disk
 # Define the mesh
@@ -49,11 +50,10 @@ solve_DiffusionSteadyDiph!(solver; method=Base.:\)
 println(maximum(abs.(solver.x)))
 
 # Plot the solution usign Makie
-plot_solution(solver, mesh, circle, capacity)
+#plot_solution(solver, mesh, circle, capacity)
 
-readline()
 # Write the solution to a VTK file
-#write_vtk("poisson_2d", mesh, solver)
+write_vtk("poisson_2d", mesh, solver)
 
 
 # Analytical solution

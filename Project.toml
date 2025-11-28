@@ -27,7 +27,7 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
-WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+VTKOutputs = "be41f24c-e31d-4e46-8a60-1ebf7af5120a"
 
 [compat]
 CSV = "0.10.15"
@@ -46,7 +46,6 @@ QuadGK = "2.11.2"
 Roots = "2.2.5"
 SpecialFunctions = "2.5.0"
 Statistics = "1.11.1"
-WriteVTK = "1.21.1"
 julia = "1"
 
 [extras]
