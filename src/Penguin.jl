@@ -107,6 +107,11 @@ export compute_volume_jacobian
 export solve_StefanMono2Dunclosed!
 export solve_StefanMono2D_geom!
 
+include("liquidmotionsolver/stefan3D.jl")
+export StefanMono3D, solve_StefanMono3D!
+export compute_volume_jacobian_3D
+export smooth_displacements_3D!
+
 include("concentrationsolver/species.jl")
 export DiffusionUnsteadyConcentration, solve_DiffusionUnsteadyConcentration!
 
