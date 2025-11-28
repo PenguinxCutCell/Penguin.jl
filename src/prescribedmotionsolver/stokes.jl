@@ -250,7 +250,11 @@ function spacetime_weight_mats(capacity::AbstractCapacity,
     Ψn1 = spdiagm(0 => psip.(diag_Vn, diag_Vn_1))
     Ψn  = spdiagm(0 => psim.(diag_Vn, diag_Vn_1))
     ΔV  = spdiagm(0 => diag_Vn_1 .- diag_Vn)
-    return Ψn1, Ψn, ΔV
+    # Extract diagonal volume matrices for mass terms:
+    # Vn_1_diag for LHS, Vn_diag for RHS (following diffusion solver convention)
+    Vn_1_diag = spdiagm(0 => diag_Vn_1)
+    Vn_diag   = spdiagm(0 => diag_Vn)
+    return Ψn1, Ψn, ΔV, Vn_1_diag, Vn_diag
 end
 
 function assemble_moving_stokes(fluid::Fluid{N},
@@ -289,7 +293,7 @@ function moving_stokes1D_blocks(fluid::Fluid{1}, scheme::String)
     nu = size(G, 2)
 
     psip, psim = moving_stokes_weights(scheme)
-    Ψn1, Ψn, ΔV = spacetime_weight_mats(cap_u, nu, psip, psim)
+    Ψn1, Ψn, ΔV, Vn_1_diag, Vn_diag = spacetime_weight_mats(cap_u, nu, psip, psim)
 
     Iμ = spatial_block(build_I_D(op_u, fluid.μ, cap_u))
     Iρ = spatial_block(build_I_D(op_u, fluid.ρ, cap_u))
@@ -318,10 +322,12 @@ function moving_stokes1D_blocks(fluid::Fluid{1}, scheme::String)
     div_uω = -(Gp' + Hp')
     div_uγ = Hp'
 
-    mass = Iρ * V
+    # Use Vn_1_diag for LHS mass, Vn_diag for RHS mass (following diffusion convention)
+    mass_lhs = Iρ * Vn_1_diag  # Mass term for LHS (time n-1 volumes)
+    mass_rhs = Iρ * Vn_diag    # Mass term for RHS (time n volumes)
 
     return (; nu, np, visc_uω, visc_uγ, grad, div_uω, div_uγ,
-            tie, V, Ψn, Ψn1, ΔV, op_u, cap_u, cap_p, Vp, mass)
+            tie, V, Ψn, Ψn1, ΔV, op_u, cap_u, cap_p, Vp, mass_lhs, mass_rhs)
 end
 
 function moving_stokes2D_blocks(fluid::Fluid{2}, scheme::String)
@@ -338,13 +344,15 @@ function moving_stokes2D_blocks(fluid::Fluid{2}, scheme::String)
         W = spatial_block(op.Wꜝ)
         V = spatial_block(op.V)
         nu = size(G, 2)
-        Ψn1, Ψn, ΔV = spacetime_weight_mats(cap, nu, psip, psim)
+        Ψn1, Ψn, ΔV, Vn_1_diag, Vn_diag = spacetime_weight_mats(cap, nu, psip, psim)
         Iμ = spatial_block(build_I_D(op, fluid.μ, cap))
         Iρ = spatial_block(build_I_D(op, fluid.ρ, cap))
         visc_ω = Iμ * (G' * (W * G)) * Ψn1
         visc_γ = Iμ * (G' * (W * H)) * Ψn1
-        mass = Iρ * V
-        return (; G, H, W, V, nu, Ψn1, Ψn, ΔV, visc_ω, visc_γ, mass)
+        # Use Vn_1_diag for LHS mass, Vn_diag for RHS mass (following diffusion convention)
+        mass_lhs = Iρ * Vn_1_diag
+        mass_rhs = Iρ * Vn_diag
+        return (; G, H, W, V, nu, Ψn1, Ψn, ΔV, visc_ω, visc_γ, mass_lhs, mass_rhs)
     end
 
     data_x = component_data(ops_u[1], caps_u[1])
@@ -389,7 +397,8 @@ function moving_stokes2D_blocks(fluid::Fluid{2}, scheme::String)
             Ψn_x = data_x.Ψn, Ψn_y = data_y.Ψn,
             ΔV_x = data_x.ΔV, ΔV_y = data_y.ΔV,
             Vx = data_x.V, Vy = data_y.V,
-            mass_x = data_x.mass, mass_y = data_y.mass,
+            mass_x_lhs = data_x.mass_lhs, mass_y_lhs = data_y.mass_lhs,
+            mass_x_rhs = data_x.mass_rhs, mass_y_rhs = data_y.mass_rhs,
             op_ux = ops_u[1], op_uy = ops_u[2],
             cap_ux = caps_u[1], cap_uy = caps_u[2],
             op_p, cap_p, Vp)
@@ -411,7 +420,9 @@ function assemble_moving_stokes1D(fluid::Fluid{1},
     cols = 2 * nu + np
     A = spzeros(Float64, rows, cols)
 
-    mass_dt = (1.0 / Δt) * data.mass
+    # LHS uses mass_lhs (Vn_1 volumes), RHS uses mass_rhs (Vn volumes)
+    mass_lhs_dt = (1.0 / Δt) * data.mass_lhs
+    mass_rhs_dt = (1.0 / Δt) * data.mass_rhs
     θc = 1.0 - θ
 
     Ndofs = 2 * nu + np
@@ -419,7 +430,7 @@ function assemble_moving_stokes1D(fluid::Fluid{1},
     u_prev_ω = view(x_prev_vec, 1:nu)
     u_prev_γ = view(x_prev_vec, nu+1:2nu)
 
-    A[1:nu, 1:nu] = mass_dt + θ * data.visc_uω
+    A[1:nu, 1:nu] = mass_lhs_dt + θ * data.visc_uω
     A[1:nu, nu+1:2nu] = θ * data.visc_uγ - data.ΔV
     A[1:nu, 2nu+1:2nu+np] = data.grad
 
@@ -434,7 +445,8 @@ function assemble_moving_stokes1D(fluid::Fluid{1},
     weighted_f = θ .* f_next .+ θc .* f_prev
     load = data.V * (data.Ψn * weighted_f)
 
-    rhs_mom = mass_dt * u_prev_ω
+    # RHS mass term uses mass_rhs (Vn volumes) following diffusion convention
+    rhs_mom = mass_rhs_dt * u_prev_ω
     rhs_mom .-= θc * (data.visc_uω * u_prev_ω + data.visc_uγ * u_prev_γ)
     rhs_mom .+= load
 
@@ -473,8 +485,11 @@ function assemble_moving_stokes2D(fluid::Fluid{2},
     cols = rows
     A = spzeros(Float64, rows, cols)
 
-    mass_x_dt = (1.0 / Δt) * data.mass_x
-    mass_y_dt = (1.0 / Δt) * data.mass_y
+    # LHS uses mass_*_lhs (Vn_1 volumes), RHS uses mass_*_rhs (Vn volumes)
+    mass_x_lhs_dt = (1.0 / Δt) * data.mass_x_lhs
+    mass_y_lhs_dt = (1.0 / Δt) * data.mass_y_lhs
+    mass_x_rhs_dt = (1.0 / Δt) * data.mass_x_rhs
+    mass_y_rhs_dt = (1.0 / Δt) * data.mass_y_rhs
     θc = 1.0 - θ
 
     off_uωx = 0
@@ -496,13 +511,13 @@ function assemble_moving_stokes2D(fluid::Fluid{2},
     uωy_prev = view(x_prev_vec, off_uωy+1:off_uωy+nu_y)
     uγy_prev = view(x_prev_vec, off_uγy+1:off_uγy+nu_y)
 
-    A[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = mass_x_dt + θ * data.visc_x_ω
+    A[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = mass_x_lhs_dt + θ * data.visc_x_ω
     A[row_uωx+1:row_uωx+nu_x, off_uγx+1:off_uγx+nu_x] = θ * data.visc_x_γ - data.ΔV_x
     A[row_uωx+1:row_uωx+nu_x, off_p+1:off_p+np]       = data.grad_x
 
     A[row_uγx+1:row_uγx+nu_x, off_uγx+1:off_uγx+nu_x] = data.tie_x
 
-    A[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = mass_y_dt + θ * data.visc_y_ω
+    A[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = mass_y_lhs_dt + θ * data.visc_y_ω
     A[row_uωy+1:row_uωy+nu_y, off_uγy+1:off_uγy+nu_y] = θ * data.visc_y_γ - data.ΔV_y
     A[row_uωy+1:row_uωy+nu_y, off_p+1:off_p+np]       = data.grad_y
 
@@ -528,11 +543,12 @@ function assemble_moving_stokes2D(fluid::Fluid{2},
     weighted_fy = θ .* f_next_y .+ θc .* f_prev_y
     load_y = data.Vy * (data.Ψn_y * weighted_fy)
 
-    rhs_mom_x = mass_x_dt * uωx_prev
+    # RHS mass terms use mass_*_rhs (Vn volumes) following diffusion convention
+    rhs_mom_x = mass_x_rhs_dt * uωx_prev
     rhs_mom_x .-= θc * (data.visc_x_ω * uωx_prev + data.visc_x_γ * uγx_prev)
     rhs_mom_x .+= load_x
 
-    rhs_mom_y = mass_y_dt * uωy_prev
+    rhs_mom_y = mass_y_rhs_dt * uωy_prev
     rhs_mom_y .-= θc * (data.visc_y_ω * uωy_prev + data.visc_y_γ * uγy_prev)
     rhs_mom_y .+= load_y
 
