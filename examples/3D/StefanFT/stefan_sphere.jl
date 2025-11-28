@@ -38,12 +38,14 @@ function F(s)
 end
 
 # Calculate the similarity parameter S (for 3D spherical growth)
-# The similarity parameter for a sphere differs from 2D disk
+# S is determined from the Stefan condition: ρL*S² = 2*k*(T∞-TM)/F(S)
+# where F(s) = E₁(s²/4) is the exponential integral
+# For Ste=0.5 in 3D spherical coordinates, S ≈ 1.56
 S = 1.56
 println("Similarity parameter S = $S")
 
 # Set initial conditions
-R0 = 1.56      # Initial radius
+# Using R(t) = S*sqrt(t) as the self-similar solution
 t_init = 1.0   # Initial time
 t_final = 1.1  # Final time
 

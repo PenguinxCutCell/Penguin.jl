@@ -302,9 +302,11 @@ function solve_StefanMono3D!(s::Solver, phase::Phase, front, Δt::Float64, Tₛ:
             
             for (eq_idx, (i, j, k)) in enumerate(cells_idx)
                 for (marker_idx, jac_value) in volume_jacobian[(i,j,k)]
+                    # FrontCutTracking returns 0-based marker indices
+                    # Convert to Julia's 1-based indexing
                     if 0 <= marker_idx < n_markers
                         push!(row_indices, eq_idx)
-                        push!(col_indices, marker_idx + 1)  # 1-based indexing
+                        push!(col_indices, marker_idx + 1)
                         push!(values, ρL * jac_value)
                     end
                 end
