@@ -129,9 +129,8 @@ function assemble_stokes_diph!(s::StokesDiph)
     np = data_a.np
 
     rows_phase = 2 * sum_nu + np
-    jump_rows = nu_x + nu_y
-    flux_rows = nu_x + nu_y
-    total_rows = 2 * rows_phase + jump_rows + flux_rows
+    # Interface conditions now go into tie rows, so system is square
+    total_rows = 2 * rows_phase
     total_cols = 2 * (2 * sum_nu + np)
 
     A = spzeros(Float64, total_rows, total_cols)
@@ -154,8 +153,6 @@ function assemble_stokes_diph!(s::StokesDiph)
     # Row offsets
     row_phase1 = 0
     row_phase2 = rows_phase
-    row_jump = 2 * rows_phase
-    row_flux = row_jump + jump_rows
 
     # --- Phase 1 blocks (identical to StokesMono 2D) ---
     row_u1ωx = row_phase1
@@ -213,25 +210,26 @@ function assemble_stokes_diph!(s::StokesDiph)
     b[row_u2γx+1:row_u2γx+nu_x] .= 0.0
     b[row_u2γy+1:row_u2γy+nu_y] .= 0.0
 
-    # --- Interface scalar jump (uγ continuity) ---
+    # --- Interface scalar jump (uγ continuity) placed in Phase 1 tie rows ---
     jump = s.interface.scalar
     jump_vec_x1 = coeff_vector(jump.α₁, ux_coords)
     jump_vec_x2 = coeff_vector(jump.α₂, ux_coords)
     jump_vec_y1 = coeff_vector(jump.α₁, uy_coords)
     jump_vec_y2 = coeff_vector(jump.α₂, uy_coords)
 
-    row_sx = row_jump + 1
-    row_sy = row_jump + nu_x + 1
-    # [[αu]] = α₂u₂ - α₁u₁ = g  (signs matter for continuity)
-    A[row_sx-1+1:row_sx-1+nu_x, off_u1γx+1:off_u1γx+nu_x] = -spdiagm(0 => jump_vec_x1)
-    A[row_sx-1+1:row_sx-1+nu_x, off_u2γx+1:off_u2γx+nu_x] =  spdiagm(0 => jump_vec_x2)
-    b[row_sx:row_sx+nu_x-1] = safe_build_g(data_a.op_ux, jump, data_a.cap_px, nothing)
+    # Scalar jump x-component: [[αu_x]] = α₂u₂γx - α₁u₁γx = g
+    # Place in Phase 1 tie_x rows (row_u1γx)
+    A[row_u1γx+1:row_u1γx+nu_x, off_u1γx+1:off_u1γx+nu_x] = -spdiagm(0 => jump_vec_x1)
+    A[row_u1γx+1:row_u1γx+nu_x, off_u2γx+1:off_u2γx+nu_x] =  spdiagm(0 => jump_vec_x2)
+    b[row_u1γx+1:row_u1γx+nu_x] = safe_build_g(data_a.op_ux, jump, data_a.cap_px, nothing)
 
-    A[row_sy-1+1:row_sy-1+nu_y, off_u1γy+1:off_u1γy+nu_y] = -spdiagm(0 => jump_vec_y1)
-    A[row_sy-1+1:row_sy-1+nu_y, off_u2γy+1:off_u2γy+nu_y] =  spdiagm(0 => jump_vec_y2)
-    b[row_sy:row_sy+nu_y-1] = safe_build_g(data_a.op_uy, jump, data_a.cap_py, nothing)
+    # Scalar jump y-component: [[αu_y]] = α₂u₂γy - α₁u₁γy = g
+    # Place in Phase 1 tie_y rows (row_u1γy)
+    A[row_u1γy+1:row_u1γy+nu_y, off_u1γy+1:off_u1γy+nu_y] = -spdiagm(0 => jump_vec_y1)
+    A[row_u1γy+1:row_u1γy+nu_y, off_u2γy+1:off_u2γy+nu_y] =  spdiagm(0 => jump_vec_y2)
+    b[row_u1γy+1:row_u1γy+nu_y] = safe_build_g(data_a.op_uy, jump, data_a.cap_py, nothing)
 
-    # --- Interface flux jump (traction continuity) ---
+    # --- Interface flux jump (traction continuity) placed in Phase 2 tie rows ---
     flux = s.interface.flux
     flux_vec_x1 = coeff_vector(flux.β₁, ux_coords)
     flux_vec_x2 = coeff_vector(flux.β₂, ux_coords)
@@ -253,25 +251,25 @@ function assemble_stokes_diph!(s::StokesDiph)
     Tyω_b = Iμy_b * (data_b.op_uy.H' * (data_b.op_uy.Wꜝ * data_b.op_uy.G))
     Tyγ_b = Iμy_b * (data_b.op_uy.H' * (data_b.op_uy.Wꜝ * data_b.op_uy.H))
 
-    row_fx = row_flux + 1
-    row_fy = row_flux + nu_x + 1
+    # Flux jump x-component: [[βσ·n]]_x = β₂σ₂·n - β₁σ₁·n = g (traction continuity)
+    # Place in Phase 2 tie_x rows (row_u2γx)
+    A[row_u2γx+1:row_u2γx+nu_x, off_u1ωx+1:off_u1ωx+nu_x] = -spdiagm(0 => flux_vec_x1) * Txω_a
+    A[row_u2γx+1:row_u2γx+nu_x, off_u1γx+1:off_u1γx+nu_x] = -spdiagm(0 => flux_vec_x1) * Txγ_a
+    A[row_u2γx+1:row_u2γx+nu_x, off_p1+1:off_p1+np]      .=  spdiagm(0 => flux_vec_x1)  # +β₁(-p₁) contribution
+    A[row_u2γx+1:row_u2γx+nu_x, off_u2ωx+1:off_u2ωx+nu_x] =  spdiagm(0 => flux_vec_x2) * Txω_b
+    A[row_u2γx+1:row_u2γx+nu_x, off_u2γx+1:off_u2γx+nu_x] =  spdiagm(0 => flux_vec_x2) * Txγ_b
+    A[row_u2γx+1:row_u2γx+nu_x, off_p2+1:off_p2+np]      .= -spdiagm(0 => flux_vec_x2)  # -β₂(-p₂) term
+    b[row_u2γx+1:row_u2γx+nu_x] = safe_build_g(data_a.op_ux, flux, data_a.cap_px, nothing)
 
-    # [[βσ·n]] = β₂σ₂·n - β₁σ₁·n = g (traction continuity)
-    A[row_fx-1+1:row_fx-1+nu_x, off_u1ωx+1:off_u1ωx+nu_x] = -spdiagm(0 => flux_vec_x1) * Txω_a
-    A[row_fx-1+1:row_fx-1+nu_x, off_u1γx+1:off_u1γx+nu_x] = -spdiagm(0 => flux_vec_x1) * Txγ_a
-    A[row_fx-1+1:row_fx-1+nu_x, off_p1+1:off_p1+np]      .=  spdiagm(0 => flux_vec_x1)  # +β₁(-p₁) contribution
-    A[row_fx-1+1:row_fx-1+nu_x, off_u2ωx+1:off_u2ωx+nu_x] =  spdiagm(0 => flux_vec_x2) * Txω_b
-    A[row_fx-1+1:row_fx-1+nu_x, off_u2γx+1:off_u2γx+nu_x] =  spdiagm(0 => flux_vec_x2) * Txγ_b
-    A[row_fx-1+1:row_fx-1+nu_x, off_p2+1:off_p2+np]      .= -spdiagm(0 => flux_vec_x2)  # -β₂(-p₂) term
-    b[row_fx:row_fx+nu_x-1] = safe_build_g(data_a.op_ux, flux, data_a.cap_px, nothing)
-
-    A[row_fy-1+1:row_fy-1+nu_y, off_u1ωy+1:off_u1ωy+nu_y] = -spdiagm(0 => flux_vec_y1) * Tyω_a
-    A[row_fy-1+1:row_fy-1+nu_y, off_u1γy+1:off_u1γy+nu_y] = -spdiagm(0 => flux_vec_y1) * Tyγ_a
-    A[row_fy-1+1:row_fy-1+nu_y, off_p1+1:off_p1+np]      .=  spdiagm(0 => flux_vec_y1)
-    A[row_fy-1+1:row_fy-1+nu_y, off_u2ωy+1:off_u2ωy+nu_y] =  spdiagm(0 => flux_vec_y2) * Tyω_b
-    A[row_fy-1+1:row_fy-1+nu_y, off_u2γy+1:off_u2γy+nu_y] =  spdiagm(0 => flux_vec_y2) * Tyγ_b
-    A[row_fy-1+1:row_fy-1+nu_y, off_p2+1:off_p2+np]      .= -spdiagm(0 => flux_vec_y2)
-    b[row_fy:row_fy+nu_y-1] = safe_build_g(data_a.op_uy, flux, data_a.cap_py, nothing)
+    # Flux jump y-component: [[βσ·n]]_y = β₂σ₂·n - β₁σ₁·n = g (traction continuity)
+    # Place in Phase 2 tie_y rows (row_u2γy)
+    A[row_u2γy+1:row_u2γy+nu_y, off_u1ωy+1:off_u1ωy+nu_y] = -spdiagm(0 => flux_vec_y1) * Tyω_a
+    A[row_u2γy+1:row_u2γy+nu_y, off_u1γy+1:off_u1γy+nu_y] = -spdiagm(0 => flux_vec_y1) * Tyγ_a
+    A[row_u2γy+1:row_u2γy+nu_y, off_p1+1:off_p1+np]      .=  spdiagm(0 => flux_vec_y1)
+    A[row_u2γy+1:row_u2γy+nu_y, off_u2ωy+1:off_u2ωy+nu_y] =  spdiagm(0 => flux_vec_y2) * Tyω_b
+    A[row_u2γy+1:row_u2γy+nu_y, off_u2γy+1:off_u2γy+nu_y] =  spdiagm(0 => flux_vec_y2) * Tyγ_b
+    A[row_u2γy+1:row_u2γy+nu_y, off_p2+1:off_p2+np]      .= -spdiagm(0 => flux_vec_y2)
+    b[row_u2γy+1:row_u2γy+nu_y] = safe_build_g(data_a.op_uy, flux, data_a.cap_py, nothing)
 
     # Boundary conditions
     apply_velocity_dirichlet_2D!(A, b, s.bc_u_a[1], s.bc_u_a[2], s.fluid_a.mesh_u;
