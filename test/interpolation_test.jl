@@ -97,4 +97,41 @@ using Test
         @test h_lin(-dx) != 0.0  # Should extrapolate
         @test h_quad(lx + dx) != 0.0  # Should extrapolate
     end
+
+    @testset "Bilinear Interpolation 3D" begin
+        # Test bilinear interpolation for 3D interface tracking
+        y_coords = [0.0, 0.5, 1.0]
+        z_coords = [0.0, 0.5, 1.0]
+        
+        # Constant function
+        values_const = fill(2.0, 3, 3)
+        interp_const = bilinear_interpolation_3d(y_coords, z_coords, values_const)
+        @test interp_const(0.0, 0.0) ≈ 2.0 atol=1e-10
+        @test interp_const(0.5, 0.5) ≈ 2.0 atol=1e-10
+        @test interp_const(0.25, 0.75) ≈ 2.0 atol=1e-10
+        
+        # Linear function in y: f(y,z) = y
+        values_y = [0.0 0.0 0.0; 0.5 0.5 0.5; 1.0 1.0 1.0]
+        interp_y = bilinear_interpolation_3d(y_coords, z_coords, values_y)
+        @test interp_y(0.0, 0.5) ≈ 0.0 atol=1e-10
+        @test interp_y(0.5, 0.5) ≈ 0.5 atol=1e-10
+        @test interp_y(1.0, 0.5) ≈ 1.0 atol=1e-10
+        @test interp_y(0.25, 0.5) ≈ 0.25 atol=1e-10
+        
+        # Linear function in z: f(y,z) = z
+        values_z = [0.0 0.5 1.0; 0.0 0.5 1.0; 0.0 0.5 1.0]
+        interp_z = bilinear_interpolation_3d(y_coords, z_coords, values_z)
+        @test interp_z(0.5, 0.0) ≈ 0.0 atol=1e-10
+        @test interp_z(0.5, 0.5) ≈ 0.5 atol=1e-10
+        @test interp_z(0.5, 1.0) ≈ 1.0 atol=1e-10
+        @test interp_z(0.5, 0.25) ≈ 0.25 atol=1e-10
+        
+        # Bilinear function: f(y,z) = y + z
+        values_yz = [0.0 0.5 1.0; 0.5 1.0 1.5; 1.0 1.5 2.0]
+        interp_yz = bilinear_interpolation_3d(y_coords, z_coords, values_yz)
+        @test interp_yz(0.0, 0.0) ≈ 0.0 atol=1e-10
+        @test interp_yz(0.5, 0.5) ≈ 1.0 atol=1e-10
+        @test interp_yz(1.0, 1.0) ≈ 2.0 atol=1e-10
+        @test interp_yz(0.25, 0.25) ≈ 0.5 atol=1e-10
+    end
 end

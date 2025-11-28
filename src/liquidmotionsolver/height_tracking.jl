@@ -35,14 +35,18 @@ end
     column_height_profile(V)
 
 Collapse the height field `V` along the streamwise direction to obtain the
-column-wise interface height vector.
+column-wise interface height vector or matrix. In 1D returns a vector,
+in 2D returns a vector (collapsed along x), in 3D returns a matrix (ny x nz).
 """
 function column_height_profile(V::AbstractArray)
     nd = ndims(V)
     if nd == 1
         return collect(V)
-    else
+    elseif nd == 2
         return vec(sum(V, dims=1))
+    else
+        # 3D case: sum along the x-dimension (dim=1), return a matrix (ny x nz)
+        return dropdims(sum(V, dims=1), dims=1)
     end
 end
 
@@ -61,12 +65,12 @@ end
     interface_positions_from_heights(heights, mesh)
 
 Map a height profile back to physical interface positions using the transverse
-mesh spacing. In 1D the result is a scalar position; in 2D (and higher) a
-vector of positions is returned.
+mesh spacing. In 1D the result is a scalar position; in 2D and 3D a
+vector/matrix of positions is returned.
 """
 function interface_positions_from_heights(heights, mesh::AbstractMesh)
     n_dims = length(mesh.nodes)
-    @assert n_dims in (1, 2) "Interface reconstruction only implemented for 1D or 2D meshes."
+    @assert n_dims in (1, 2, 3) "Interface reconstruction only implemented for 1D, 2D or 3D meshes."
 
     if n_dims == 1
         x_nodes = mesh.nodes[1]
@@ -74,13 +78,25 @@ function interface_positions_from_heights(heights, mesh::AbstractMesh)
         Δx = x_nodes[2] - x_nodes[1]
         x0 = x_nodes[1]
         return x0 + sum(heights) / Δx
-    else
+    elseif n_dims == 2
         x_nodes = mesh.nodes[1]
         y_nodes = mesh.nodes[2]
         length(y_nodes) > 1 || error("Mesh requires at least two nodes in the transverse direction.")
         Δy = y_nodes[2] - y_nodes[1]
         x0 = x_nodes[1]
         return x0 .+ heights ./ Δy
+    else
+        # 3D case: heights is a 2D array (ny, nz)
+        x_nodes = mesh.nodes[1]
+        y_nodes = mesh.nodes[2]
+        z_nodes = mesh.nodes[3]
+        length(y_nodes) > 1 || error("Mesh requires at least two nodes in the y-direction.")
+        length(z_nodes) > 1 || error("Mesh requires at least two nodes in the z-direction.")
+        Δy = y_nodes[2] - y_nodes[1]
+        Δz = z_nodes[2] - z_nodes[1]
+        x0 = x_nodes[1]
+        # heights is reshaped to (ny, nz), divide by transverse spacing
+        return x0 .+ heights ./ (Δy * Δz)
     end
 end
 
