@@ -71,7 +71,7 @@ end
 println("Initial radius at t=$t_init: R=$(interface_position(t_init))")
 
 # Define the spatial mesh (3D)
-nx, ny, nz = 16, 16, 16  # Lower resolution for 3D to manage computational cost
+nx, ny, nz = 4, 4, 4  # Lower resolution for 3D to manage computational cost
 lx, ly, lz = 12.0, 12.0, 12.0
 x0, y0, z0 = -6.0, -6.0, -6.0
 Δx, Δy, Δz = lx/(nx), ly/(ny), lz/(nz)
@@ -82,12 +82,12 @@ println("Δx=$(Δx), Δy=$(Δy), Δz=$(Δz)")
 println("Domain: [$x0, $(x0+lx)] x [$y0, $(y0+ly)] x [$z0, $(z0+lz)]")
 
 # Create the 3D front-tracking body (sphere)
-nmarkers = 500  # Number of markers on the sphere surface
+nmarkers = 20  # Number of markers on the sphere surface
 front = FrontTracker3D()
 create_sphere!(front, 0.0, 0.0, 0.0, interface_position(t_init), nmarkers)
 
 # Define the initial position of the front using the SDF
-body = (x, y, z, t, _=0) -> -sdf_3d(front, x, y, z)
+body = (x, y, z, t, _=0) -> -sdf(front, x, y, z)
 
 # Define the Space-Time mesh
 Δt = 0.1*(lx / nx)^2  # Time step size (smaller for 3D stability)
@@ -98,7 +98,7 @@ println("Final radius at t=$(t_init + Δt): R=$(interface_position(t_init + Δt)
 STmesh = Penguin.SpaceTimeMesh(mesh, [t_init, t_init + Δt], tag=mesh.tag)
 
 # Define the capacity
-capacity = Capacity(body, STmesh; compute_centroids=false)
+capacity = Capacity(body, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
 
 # Define the diffusion operator
 operator = DiffusionOps(capacity)
@@ -122,15 +122,16 @@ stef_cond = InterfaceConditions(nothing, FluxJump(1.0, 1.0, L))
 
 # Define the source term (no source) and thermal conductivity
 f = (x, y, z, t) -> 0.0
-K = (x, y, z) -> 1.0  # Thermal conductivity
+K = (x, y, z, t) -> 1.0  # Thermal conductivity
 
-Fluide = Phase(capacity, operator, f, K)
+source(x, y, z, t,teval)= f(x, y, z, t)
+Fluide = Phase(capacity, operator, source, K)
 
 # Set up initial condition for 3D
 n_total = (nx+1)*(ny+1)*(nz+1)
 u0ₒ = zeros(n_total)
-body_init = (x, y, z, _=0) -> -sdf_3d(front, x, y, z)
-cap_init = Capacity(body_init, mesh; compute_centroids=false)
+body_init = (x, y, z, _=0) -> -sdf(front, x, y, z)
+cap_init = Capacity(body_init, mesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
 centroids = cap_init.C_ω
 
 # Initialize the temperature field

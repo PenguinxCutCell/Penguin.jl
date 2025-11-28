@@ -213,7 +213,7 @@ function solve_StefanMono3D!(s::Solver, phase::Phase, front, Δt::Float64, Tₛ:
     push!(s.states, s.x)
     
     # Get initial interface markers
-    markers = get_markers_3d(front)
+    markers = get_markers(front)
     
     # Store initial interface position
     xf_log[1] = markers
@@ -231,8 +231,8 @@ function solve_StefanMono3D!(s::Solver, phase::Phase, front, Δt::Float64, Tₛ:
         end
 
         # Get current markers and calculate normals
-        markers = get_markers_3d(front)
-        normals = compute_marker_normals_3d(front, markers)
+        markers = get_markers(front)
+        normals = compute_marker_normals(front)
         
         # Update time for this step
         t += Δt
@@ -404,14 +404,14 @@ function solve_StefanMono3D!(s::Solver, phase::Phase, front, Δt::Float64, Tₛ:
             # 8. Create space-time level set for capacity calculation
             body = (x, y, z, t_local, _=0) -> begin
                 τ = (t_local - tₙ) / Δt
-                sdf1 = -sdf_3d(front, x, y, z)
-                sdf2 = -sdf_3d(updated_front, x, y, z)
+                sdf1 = -sdf(front, x, y, z)
+                sdf2 = -sdf(updated_front, x, y, z)
                 return (1 - τ) * sdf1 + τ * sdf2
             end
             
             # 9. Update space-time mesh and capacity
             STmesh = Penguin.SpaceTimeMesh(mesh, time_interval, tag=mesh.tag)
-            capacity = Capacity(body, STmesh; compute_centroids=false)
+            capacity = Capacity(body, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
             operator = DiffusionOps(capacity)
             phase_updated = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
             
@@ -428,7 +428,7 @@ function solve_StefanMono3D!(s::Solver, phase::Phase, front, Δt::Float64, Tₛ:
             phase = phase_updated
 
             body_3d = (x, y, z, _=0) -> body(x, y, z, tₙ₊₁)
-            capacity_3d = Capacity(body_3d, mesh; compute_centroids=false)
+            capacity_3d = Capacity(body_3d, mesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
             operator_3d = DiffusionOps(capacity_3d)
             phase_3d = Phase(capacity_3d, operator_3d, phase.source, phase.Diffusion_coeff)
         end
@@ -449,7 +449,7 @@ function solve_StefanMono3D!(s::Solver, phase::Phase, front, Δt::Float64, Tₛ:
         end
         
         # Update front with new markers
-        set_markers_3d!(front, new_markers)
+        set_markers!(front, new_markers)
         
         # Store updated interface position
         xf_log[timestep+1] = new_markers
