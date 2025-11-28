@@ -64,11 +64,7 @@ bc1 = Dirichlet(0.0)   # Bottom boundary
 # Border conditions - set all boundaries except interface
 bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(
     :bottom => bc1,
-    :top => Neumann(0.0),
-    :left => Neumann(0.0),
-    :right => Neumann(0.0),
-    :front => Neumann(0.0),
-    :back => Neumann(0.0)
+
 ))
 
 # Physical parameters
@@ -91,8 +87,8 @@ u0 = vcat(u0ₒ, u0ᵧ)
 
 # Newton parameters
 max_iter = 10000
-tol = 1e-6
-reltol = 1e-6
+tol = 1e-5
+reltol = 1e-5
 α = 1.0
 Newton_params = (max_iter, tol, reltol, α)
 

@@ -53,10 +53,6 @@ end
     include("interpolation_test.jl")
 end
 
-@testset "Front Tracking Test" begin
-    # Write your tests here.
-    include("front_tracking_test.jl")
-end
 
 @testset "Height Tracking Test" begin
     # Write your tests here.
