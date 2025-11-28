@@ -350,8 +350,8 @@ function moving_stokes2D_blocks(fluid::Fluid{2}, scheme::String)
         visc_ω = Iμ * (G' * (W * G)) * Ψn1
         visc_γ = Iμ * (G' * (W * H)) * Ψn1
         # Use Vn_1_diag for LHS mass, Vn_diag for RHS mass (following diffusion convention)
-        mass_lhs = Iρ * Vn_1_diag
-        mass_rhs = Iρ * Vn_diag
+        mass_lhs = Iρ * Vn_1_diag  # Mass term for LHS (time n-1 volumes)
+        mass_rhs = Iρ * Vn_diag    # Mass term for RHS (time n volumes)
         return (; G, H, W, V, nu, Ψn1, Ψn, ΔV, visc_ω, visc_γ, mass_lhs, mass_rhs)
     end
 
