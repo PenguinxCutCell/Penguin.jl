@@ -7,23 +7,23 @@ using VTKOutputs
 	PoissonSTL.jl
 
 Solve a steady 3D diffusion (Poisson) problem inside the geometry described by the
-`france-outline-1000.stl` surface. The STL is converted into a signed distance
+`.stl` surface. The STL is converted into a signed distance
 function (SDF) with VTLInputs, then used directly as the level-set description
 when building cut-cell capacities.
 =#
 
 # Path to the STL model
-stl_path = joinpath(@__DIR__, "france-outline-1000.stl")
+stl_path = joinpath(@__DIR__, "bunny.obj.stl")
 isfile(stl_path) || error("Missing STL file at $(stl_path).")
 
 # Signed distance function coming from the STL
 sdf = compute_stl_sdf(stl_path)
-level_set = (x, y, z, _t = 0.0) -> -sdf(x, y, z)
+level_set = (x, y, z, _t = 0.0) -> sdf(x, y, z)
 
 # Mesh covering the STL extent with a small padding
-x0, y0, z0 = -8.0, -8.0, -0.5
-lx, ly, lz = 16.5, 16.5, 1.0
-nx, ny, nz = 80, 80, 16
+x0, y0, z0 = -30.0, 5.0, -1.0
+lx, ly, lz = 50.0, 45.0, 3.0
+nx, ny, nz = 40, 40, 4
 mesh = Penguin.Mesh((nx, ny, nz), (lx, ly, lz), (x0, y0, z0))
 
 # Build capacity and differential operators from the STL-based level set
@@ -51,4 +51,4 @@ write_vtk(joinpath(@__DIR__, "poisson_france_stl"), mesh, solver)
 # Optional visualization when running in a graphical session
 #plot_solution(solver, mesh, level_set, capacity)
 
-println("Poisson problem on France STL solved. Unknowns = $(length(solver.x))")
+println("Poisson problem on STL solved. Unknowns = $(length(solver.x))")
