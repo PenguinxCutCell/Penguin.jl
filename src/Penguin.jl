@@ -131,6 +131,7 @@ export check_convergence, check_convergence_diph
 include("solver/stokes.jl")
 export AbstractPressureGauge, PinPressureGauge, MeanPressureGauge
 export StokesMono, solve_StokesMono!, solve_StokesMono_unsteady!
+
 include("solver/stokes_diph.jl")
 export StokesDiph, solve_StokesDiph!
 
