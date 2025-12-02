@@ -14,8 +14,8 @@ same imposed parabolic profile on the left/right boundaries; no-slip on top/bott
 ###########
 # Grids
 ###########
-nx, ny = 48, 48
-Lx, Ly = 2.0, 0.1
+nx, ny = 96, 96
+Lx, Ly = 20.0, 1.0
 x0, y0 = 0.0, 0.0
 dx, dy = Lx/nx, Ly/ny
 
@@ -46,7 +46,7 @@ parabola = (x, y) -> 4Umax * (y - y0) * (Ly - (y - y0)) / (Ly^2)
 ux_wall  = Dirichlet((x, y)->0.0)
 
 bc_ux = BorderConditions(Dict(
-    :bottom=>ux_wall, :top=>ux_wall, :left=>Dirichlet((x, y)->parabola(x,y)), :right=>Outflow()
+    :bottom=>ux_wall, :top=>ux_wall, 
 ))
 
 uy_zero = Dirichlet((x, y)->0.0)
@@ -62,10 +62,10 @@ pressure_gauges = (PinPressureGauge(), PinPressureGauge())
 ###########
 # Sources and material
 ###########
-gradP = -8 * μ_a * Umax / (Ly^2)  # body-force equivalent to dp/dx
-fᵤ = (x, y, z=0.0) -> 0.0 #-gradP
+gradP = -0.21                # imposed pressure gradient (dp/dx)
+fᵤ = (x, y, z=0.0) -> -gradP
 fₚ = (x, y, z=0.0) -> 0.0
-μ_a, μ_b = 1.0, 1.0
+μ_a, μ_b = 1.0, 10.0
 ρ_a, ρ_b = 1.0, 1.0
 
 fluid_a = Fluid((mesh_ux, mesh_uy),
@@ -87,8 +87,8 @@ fluid_b = Fluid((mesh_ux, mesh_uy),
 ###########
 # Solve
 ###########
-ic_x = InterfaceConditions(ScalarJump(1.0, 1.0, 0.0), FluxJump(-μ_a, μ_b, 0.0))
-ic_y = InterfaceConditions(ScalarJump(1.0, 1.0, 0.0), FluxJump(-μ_a, μ_b, 0.0))
+ic_x = InterfaceConditions(ScalarJump(1.0, 1.0, 0.0), FluxJump(-1.0, 1.0, 0.0))
+ic_y = InterfaceConditions(ScalarJump(1.0, 1.0, 0.0), FluxJump(-1.0, 1.0, 0.0))
 
 solver = StokesDiph(fluid_a, fluid_b, (bc_ux_a, bc_uy_a), (bc_ux_b, bc_uy_b), (ic_x, ic_y), pressure_gauges)
 solve_StokesDiph!(solver; algorithm=UMFPACKFactorization())
@@ -135,6 +135,35 @@ mask_ux_b = reshape(cap_ux_b.cell_types, size(Ux2))
 #Ux1[mask_ux_a .== 0] .= NaN
 #Ux2[mask_ux_b .== 0] .= NaN
 
+# Analytical two-layer Poiseuille profile (global y in [0, Ly], interface at y_mid)
+h1 = y_mid - y0          # lower layer thickness
+h2 = (y0 + Ly) - y_mid   # upper layer thickness
+μ1, μ2 = μ_a, μ_b
+G = gradP               # dp/dx
+den_common = h1 * μ2 + h2 * μ1
+den1 = 2 * μ1 * den_common
+den2 = 2 * μ2 * den_common
+A = h1^2 * μ2 - h2^2 * μ1
+B = -G * h1 * h2 * (h1 + h2) / (2 * den_common)
+
+function u_analytical_phase1(y)
+    y1 = y - y_mid  # map global y into [-h1, 0]
+    return (G / den1) * (den_common * y1^2 + A * y1 - h1 * h2 * μ1 * (h1 + h2))
+end
+
+function u_analytical_phase2(y)
+    y2 = y - y_mid  # map global y into [0, h2]
+    return (G / den2) * (den_common * y2^2 + A * y2 - h1 * h2 * μ2 * (h1 + h2))
+end
+
+ux_target = similar(ys)
+for (j, y) in enumerate(ys)
+    ux_target[j] = y <= y_mid ? u_analytical_phase1(y) : u_analytical_phase2(y)
+end
+
+# Analytical pressure profile
+p_target = gradP .* xp .+ 0.0
+
 ###########
 # Mid-channel profile
 ###########
@@ -143,13 +172,30 @@ ux_profile = similar(ys)
 for (j, y) in enumerate(ys)
     ux_profile[j] = y <= y_mid ? Ux1[icol, j] : Ux2[icol, j]
 end
-ux_target = [parabola(0.0, y) for y in ys]
 
 fig = Figure(resolution=(900, 420))
 ax1 = Axis(fig[1, 1], xlabel="u_x", ylabel="y", title="Mid-channel profile")
 lines!(ax1, ux_profile, ys, label="numerical")
-#lines!(ax1, ux_target, ys, color=:red, linestyle=:dash, label="imposed profile")
+lines!(ax1, ux_target, ys, color=:red, linestyle=:dash, label="analytical")
 axislegend(ax1, position=:rb)
+
+###########
+# Multiple Mid-channel profiles
+###########
+fig_multi = Figure(resolution=(900, 420))
+ax_multi = Axis(fig_multi[1, 1], xlabel="u_x", ylabel="y", title="Mid-channel profiles at various x")
+n_profiles = 5
+x_indices = round.(Int, LinRange(1, length(xs), n_profiles))
+for ix in x_indices
+    ux_profile_x = similar(ys)
+    for (j, y) in enumerate(ys)
+        ux_profile_x[j] = y <= y_mid ? Ux1[ix, j] : Ux2[ix, j]
+    end
+    lines!(ax_multi, ux_profile_x, ys, label="x=$(round(xs[ix], digits=2))")
+end
+lines!(ax_multi, ux_target, ys, color=:black, linestyle=:dash, label="analytical")
+axislegend(ax_multi, position=:rb)
+display(fig_multi)
 
 ###########
 # Field plots
@@ -168,7 +214,7 @@ display(fig2)
 save("stokes_diph_poiseuille_profiles.png", fig)
 save("stokes_diph_poiseuille_velocity.png", fig2)
 
-println("Profile Linf error (u_x vs imposed): ",
+println("Profile Linf error (u_x vs analytical): ",
         maximum(abs, ux_profile .- ux_target))
 
 fig3 = Figure(resolution=(900, 400))
@@ -181,3 +227,13 @@ hm4 = heatmap!(ax5, xs, ys, Ux2g'; colormap=:viridis)
 Colorbar(fig3[1, 4], hm4)
 save("stokes_diph_poiseuille_gamma_velocity.png", fig3)
 println("Saved stokes_diph_poiseuille_gamma_velocity.png")
+
+fig4 = Figure(resolution=(900, 400))
+ax6 = Axis(fig4[1, 1], xlabel="x", ylabel="y", title="Pressure phase 1")
+hm5 = heatmap!(ax6, xp, yp, P1'; colormap=:viridis)
+Colorbar(fig4[1, 2], hm5)
+ax7 = Axis(fig4[1, 3], xlabel="x", ylabel="y", title="Pressure phase 2")
+hm6 = heatmap!(ax7, xp, yp, P2'; colormap=:viridis)
+Colorbar(fig4[1, 4], hm6)
+save("stokes_diph_poiseuille_pressure.png", fig4)
+println("Saved stokes_diph_poiseuille_pressure.png")

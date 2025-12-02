@@ -239,13 +239,17 @@ function assemble_stokes2D_diph!(s::StokesDiph)
 
     A[row_trac_x+1:row_trac_x+n_tx, off_a_uωx+1:off_a_uωx+nu_ax] = -Iβ1x * data_a.traction_x_ω
     A[row_trac_x+1:row_trac_x+n_tx, off_a_uγx+1:off_a_uγx+nu_ax] = -Iβ1x * data_a.traction_x_γ
+    #A[row_trac_x+1:row_trac_x+n_tx, off_a_p+1:off_a_p+np_a]      .-= Iβ1x * data_a.cap_px.Γ
     A[row_trac_x+1:row_trac_x+n_tx, off_b_uωx+1:off_b_uωx+nu_bx] .+= Iβ2x * data_b.traction_x_ω
     A[row_trac_x+1:row_trac_x+n_tx, off_b_uγx+1:off_b_uγx+nu_bx] .+= Iβ2x * data_b.traction_x_γ
+    #A[row_trac_x+1:row_trac_x+n_tx, off_b_p+1:off_b_p+np_b]      .+= Iβ2x * data_b.cap_px.Γ
 
     A[row_trac_y+1:row_trac_y+n_ty, off_a_uωy+1:off_a_uωy+nu_ay] = -Iβ1y * data_a.traction_y_ω
     A[row_trac_y+1:row_trac_y+n_ty, off_a_uγy+1:off_a_uγy+nu_ay] = -Iβ1y * data_a.traction_y_γ
+    #A[row_trac_y+1:row_trac_y+n_ty, off_a_p+1:off_a_p+np_a]      .-= Iβ1y * data_a.cap_py.Γ
     A[row_trac_y+1:row_trac_y+n_ty, off_b_uωy+1:off_b_uωy+nu_by] .+= Iβ2y * data_b.traction_y_ω
     A[row_trac_y+1:row_trac_y+n_ty, off_b_uγy+1:off_b_uγy+nu_by] .+= Iβ2y * data_b.traction_y_γ
+    #A[row_trac_y+1:row_trac_y+n_ty, off_b_p+1:off_b_p+np_b]      .+= Iβ2y * data_b.cap_py.Γ
 
     # Phase 2 continuity
     con2_rows = row_b_div+1:row_b_div+np_b
