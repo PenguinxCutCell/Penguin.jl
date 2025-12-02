@@ -14,7 +14,7 @@ same imposed parabolic profile on the left/right boundaries; no-slip on top/bott
 ###########
 # Grids
 ###########
-nx, ny = 96, 96
+nx, ny = 32, 32
 Lx, Ly = 20.0, 1.0
 x0, y0 = 0.0, 0.0
 dx, dy = Lx/nx, Ly/ny
@@ -215,7 +215,7 @@ save("stokes_diph_poiseuille_profiles.png", fig)
 save("stokes_diph_poiseuille_velocity.png", fig2)
 
 println("Profile Linf error (u_x vs analytical): ",
-        maximum(abs, ux_profile .- ux_target))
+        maximum(abs, ux_profile[2:end-2] .- ux_target[2:end-2]))
 
 fig3 = Figure(resolution=(900, 400))
 ax4 = Axis(fig3[1, 1], xlabel="x", ylabel="y", title="u_γ,x phase 1")

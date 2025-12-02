@@ -133,7 +133,7 @@ export AbstractPressureGauge, PinPressureGauge, MeanPressureGauge
 export StokesMono, solve_StokesMono!, solve_StokesMono_unsteady!
 
 include("solver/stokes_diph.jl")
-export StokesDiph, solve_StokesDiph!
+export StokesDiph, solve_StokesDiph!, solve_StokesDiph_unsteady!
 
 include("prescribedmotionsolver/stokes.jl")
 export MovingStokesMono, solve_MovingStokesMono!
