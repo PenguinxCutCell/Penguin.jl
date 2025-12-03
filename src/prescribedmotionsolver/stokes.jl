@@ -209,9 +209,7 @@ function stokes2D_moving_blocks(fluid::Fluid{2},
         grad_x = -grad_full[x_rows, :]
         grad_y = -grad_full[y_rows, :]
     else
-        # Fallback for when operators have different structure
-        grad_x = spzeros(nu_x, np)
-        grad_y = spzeros(nu_y, np)
+        error("Pressure gradient operator has unexpected dimensions: expected $(nu_x + nu_y) rows, got $(total_grad_rows)")
     end
 
     # Divergence operators
@@ -226,10 +224,7 @@ function stokes2D_moving_blocks(fluid::Fluid{2},
         div_y_ω = -(Gp_y' + Hp_y')
         div_y_γ = Hp_y'
     else
-        div_x_ω = spzeros(np, nu_x)
-        div_x_γ = spzeros(np, nu_x)
-        div_y_ω = spzeros(np, nu_y)
-        div_y_γ = spzeros(np, nu_y)
+        error("Divergence operator has unexpected dimensions: expected $(nu_x + nu_y) rows, got $(total_grad_rows)")
     end
 
     # Mass matrices for density
@@ -257,6 +252,11 @@ end
 
 Assemble the system matrix and RHS for moving 2D Stokes.
 Accounts for V^{n+1}, V^{n}, and -(Vn_1 - Vn) terms.
+
+For the moving case, similar to MovingDiffusionUnsteadyMono:
+- LHS block (ω,ω): Vn_1 + θ * visc_ω * Ψn1
+- LHS block (ω,γ): -(Vn_1 - Vn) + θ * visc_γ * Ψn1  
+- RHS: Vn * u_prev + source terms
 """
 function assemble_stokes2D_moving!(s::MovingStokesUnsteadyMono{2}, data, Δt::Float64,
                                     x_prev::AbstractVector{<:Real},
@@ -271,8 +271,6 @@ function assemble_stokes2D_moving!(s::MovingStokesUnsteadyMono{2}, data, Δt::Fl
     cols = 2 * sum_nu + np
     A = spzeros(Float64, rows, cols)
 
-    mass_x_dt = (1.0 / Δt) * data.mass_x
-    mass_y_dt = (1.0 / Δt) * data.mass_y
     θc = 1.0 - θ
 
     # Column offsets
@@ -289,24 +287,22 @@ function assemble_stokes2D_moving!(s::MovingStokesUnsteadyMono{2}, data, Δt::Fl
     row_uγy = 2 * nu_x + nu_y
     row_con = 2 * sum_nu
 
-    # Capacity term: Vn_1 + visc term with Ψn1
-    # And the -(Vn_1 - Vn) term for the interface boundary blocks
-    cap_term_x_ω = data.Vn_1_ux + θ * data.visc_x_ω * data.Ψn1_ux
-    cap_term_x_γ = -(data.Vn_1_ux - data.Vn_ux) + θ * data.visc_x_γ * data.Ψn1_ux
-    cap_term_y_ω = data.Vn_1_uy + θ * data.visc_y_ω * data.Ψn1_uy
-    cap_term_y_γ = -(data.Vn_1_uy - data.Vn_uy) + θ * data.visc_y_γ * data.Ψn1_uy
-
+    # Following the pattern from MovingDiffusionUnsteadyMono:
+    # LHS block (ω,ω): Vn_1 + θ * visc_ω * Ψn1
+    # LHS block (ω,γ): -(Vn_1 - Vn) + θ * visc_γ * Ψn1
+    # Note: visc terms are already built as G' W G (positive definite form)
+    
     # Momentum x-component rows
-    A[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = mass_x_dt + cap_term_x_ω
-    A[row_uωx+1:row_uωx+nu_x, off_uγx+1:off_uγx+nu_x] = cap_term_x_γ
+    A[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = data.Vn_1_ux + θ * data.visc_x_ω * data.Ψn1_ux
+    A[row_uωx+1:row_uωx+nu_x, off_uγx+1:off_uγx+nu_x] = -(data.Vn_1_ux - data.Vn_ux) + θ * data.visc_x_γ * data.Ψn1_ux
     A[row_uωx+1:row_uωx+nu_x, off_p+1:off_p+np] = data.grad_x
 
     # Tie x rows
     A[row_uγx+1:row_uγx+nu_x, off_uγx+1:off_uγx+nu_x] = data.tie_x
 
     # Momentum y-component rows
-    A[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = mass_y_dt + cap_term_y_ω
-    A[row_uωy+1:row_uωy+nu_y, off_uγy+1:off_uγy+nu_y] = cap_term_y_γ
+    A[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = data.Vn_1_uy + θ * data.visc_y_ω * data.Ψn1_uy
+    A[row_uωy+1:row_uωy+nu_y, off_uγy+1:off_uγy+nu_y] = -(data.Vn_1_uy - data.Vn_uy) + θ * data.visc_y_γ * data.Ψn1_uy
     A[row_uωy+1:row_uωy+nu_y, off_p+1:off_p+np] = data.grad_y
 
     # Tie y rows
@@ -339,14 +335,12 @@ function assemble_stokes2D_moving!(s::MovingStokesUnsteadyMono{2}, data, Δt::Fl
     load_y = data.Vy * (θ .* f_next_y .+ θc .* f_prev_y)
 
     # RHS momentum with previous time level contribution
-    # Using Vn and θc terms for explicit part
-    rhs_mom_x = mass_x_dt * uωx_prev
-    rhs_mom_x .+= (data.Vn_ux - θc * data.visc_x_ω * data.Ψn_ux) * uωx_prev
+    # Following the diffusion pattern: b1 = (Vn - θc * visc_ω * Ψn) * u_prev - θc * visc_γ * Ψn * uγ_prev + source
+    rhs_mom_x = (data.Vn_ux - θc * data.visc_x_ω * data.Ψn_ux) * uωx_prev
     rhs_mom_x .-= θc * data.visc_x_γ * data.Ψn_ux * uγx_prev
     rhs_mom_x .+= load_x
 
-    rhs_mom_y = mass_y_dt * uωy_prev
-    rhs_mom_y .+= (data.Vn_uy - θc * data.visc_y_ω * data.Ψn_uy) * uωy_prev
+    rhs_mom_y = (data.Vn_uy - θc * data.visc_y_ω * data.Ψn_uy) * uωy_prev
     rhs_mom_y .-= θc * data.visc_y_γ * data.Ψn_uy * uγy_prev
     rhs_mom_y .+= load_y
 
