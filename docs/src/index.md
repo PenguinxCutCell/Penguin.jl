@@ -9,15 +9,13 @@ Julia Implementation of Cut-Cell method for (now) :
 - Solid Moving Boundaries
 - Monophasic or Diphasic Problems
 - Darcy Flow Solver
-- Non-prescribed Interface motion (1D, 2D)
-- Fully-Coupled Stokes (mono) Solver
+- Phase Change Interface motion (1D, 2D and 3D (height function only))
+- Fully-Coupled Stokes/Navier-Stokes Solver for Monophasic and Diphasic (static interface) Flows
 
 Under development :
-- Non-prescribed Interface motion in 3D
-- Interface Tracking : VOF, LS, FT
-- Fully Coupled Navier-Stokes Solver
-- Streamfunction–vorticity solver
-- Preconditionning
+- Phase Change with Navier-Stokes coupling
+- Preconditioning
+
 
 ## Types Methods and Functions
 
