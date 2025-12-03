@@ -914,6 +914,7 @@ function solve_NavierStokesScalarCoupling!(c::NavierStokesScalarCoupler;
                                            kwargs...)
     t = 0.0
     while t < T_end - 1e-12 * max(1.0, T_end)
+        println("Time = $(t), advancing by Δt = $(Δt)")
         dt_step = min(Δt, T_end - t)
         t_next = step!(c; Δt=dt_step, t_prev=t, scheme=scheme,
                        method=method, algorithm=algorithm, kwargs...)

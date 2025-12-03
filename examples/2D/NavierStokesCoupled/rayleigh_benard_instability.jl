@@ -1,6 +1,7 @@
 using Penguin
 using LinearAlgebra
 using Statistics
+using DelimitedFiles
 try
    using CairoMakie
 catch
@@ -35,22 +36,22 @@ end
 # ---------------------------------------------------------------------------
 
 # Physical parameters
-Ra = 5.0e3         # Rayleigh number (above critical Ra_c ≈ 1708)
-Pr = 0.71          # Prandtl number (typical for air)
+Ra = 1.0e5         # Rayleigh number (Basilisk reference case)
+Pr = 1.0           # Prandtl number
 
 # Temperature boundary conditions
-T_hot = 1.0        # Bottom temperature
-T_cold = 0.0       # Top temperature
+T_hot = 0.5        # Bottom temperature
+T_cold = -0.5      # Top temperature
 ΔT = T_hot - T_cold
 T_ref = (T_hot + T_cold) / 2  # Reference temperature for buoyancy
 
 # Domain geometry
-Lx = 1.0           # Domain width (aspect ratio 2:1)
-Ly = 2.0           # Domain height
-origin = (0.0, 0.0)
+Lx = 1.0
+Ly = 1.0
+origin = (-0.5, -0.5)
 
 # Mesh resolution
-nx, ny = 64, 32    # Grid points
+nx = ny = 64      # Grid points (MINLEVEL=8 → 2^8)
 
 # Derived physical quantities (non-dimensional formulation)
 # With L = Ly = 1 as reference length and appropriate scaling:
@@ -136,9 +137,8 @@ ns_solver = NavierStokesMono(fluid, (bc_ux, bc_uy), pressure_gauge, bc_cut; x0=i
 # Temperature boundary conditions: hot bottom, cold top, insulated sides
 # ---------------------------------------------------------------------------
 bc_T = BorderConditions(Dict(
-   :right => Dirichlet(T_hot),
-   :left    => Dirichlet(T_cold),
-   # Left and right are Neumann (zero flux) by default (adiabatic walls)
+   :bottom => Dirichlet(T_hot),
+   :top    => Dirichlet(T_cold),
 ))
 bc_T_cut = Dirichlet(0.0)
 
@@ -153,18 +153,11 @@ N_scalar = Nx_T * Ny_T
 
 T0ω = zeros(Float64, N_scalar)
 for j in 1:Ny_T
-   y = nodes_Ty[j]
-   # Linear temperature profile (conduction solution)
-   frac_y = (y - first(nodes_Ty)) / (last(nodes_Ty) - first(nodes_Ty))
-   T_linear = T_hot - (T_hot - T_cold) * frac_y
-   
    for i in 1:Nx_T
-       x = nodes_Tx[i]
-       # Add small sinusoidal perturbation to trigger instability
-       # This mimics small initial disturbances that grow into convection rolls
-       perturb = 0.05 * sinpi(4 * x / Lx) * sinpi(y / Ly)
-       idx = i + (j - 1) * Nx_T
-       T0ω[idx] = T_linear + perturb
+      x = nodes_Tx[i]
+      T_linear = -x
+      idx = i + (j - 1) * Nx_T
+      T0ω[idx] = T_linear
    end
 end
 T0γ = copy(T0ω)
@@ -189,8 +182,8 @@ coupler = NavierStokesScalarCoupler(ns_solver,
 # ---------------------------------------------------------------------------
 # Time integration
 # ---------------------------------------------------------------------------
-Δt = 5.0e-3
-T_end = 0.5
+Δt = 0.025                                                                                                                             
+T_end = 5.0
 
 println("\nStarting time integration (Δt=$Δt, T_end=$T_end)...")
 times, velocity_hist, scalar_hist = solve_NavierStokesScalarCoupling!(coupler;
@@ -251,6 +244,16 @@ end
 Nu_mean = mean(Nu_local)
 println("Mean Nusselt number at bottom wall: $Nu_mean")
 println("(Nu = 1 for pure conduction, Nu > 1 indicates convective enhancement)")
+
+# ---------------------------------------------------------------------------
+# Save state to CSV files
+# ---------------------------------------------------------------------------
+writedlm(joinpath(@__DIR__, "rayleigh_benard_temperature.csv"), temp_grid, ',')
+writedlm(joinpath(@__DIR__, "rayleigh_benard_velocity_ux.csv"), Ux_grid, ',')
+writedlm(joinpath(@__DIR__, "rayleigh_benard_velocity_uy.csv"), Uy_grid, ',')
+writedlm(joinpath(@__DIR__, "rayleigh_benard_velocity_speed.csv"), speed_grid, ',')
+writedlm(joinpath(@__DIR__, "rayleigh_benard_times.csv"), times, ',')
+println("State saved to CSV (temperature, ux, uy, |u|, times) in example directory.")
 
 # ---------------------------------------------------------------------------
 # Visualization
