@@ -108,7 +108,6 @@ function A_mono_unstead_diff_moving(operator::DiffusionOps, capacity::Capacity, 
     #  => 4 for 3D: capacity.A[4]
     cap_index = len_dims
     
-    # Extract Vr (current) & Vr-1 (previous) from capacity
     Vn_1 = capacity.A[cap_index][1:end÷2, 1:end÷2]
     Vn   = capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
 
@@ -171,7 +170,6 @@ function b_mono_unstead_diff_moving(operator::DiffusionOps, capacity::Capacity, 
     gᵧ   = build_g_g(operator, bc, capacity)
     Id   = build_I_D(operator, D, capacity)
 
-    # Select the portion of capacity.A to handle Vr−1 (above half) and Vr (below half)
     Vn_1 = capacity.A[cap_index][1:end÷2, 1:end÷2]
     Vn   = capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
 
