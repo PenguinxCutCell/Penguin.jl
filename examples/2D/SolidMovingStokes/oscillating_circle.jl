@@ -16,7 +16,7 @@ and visualize the velocity field around the moving body.
 ###########
 # Geometry
 ###########
-nx, ny = 16, 16
+nx, ny = 64, 64
 Lx, Ly = 4.0, 4.0
 x0, y0 = -2.0, -2.0
 
@@ -105,7 +105,7 @@ fluid = Fluid((mesh_ux, mesh_uy),
 # Time integration setup
 ###########
 Δt = 0.02
-T_end = 0.1  # Short simulation for testing
+T_end = 0.5  # Short simulation for testing
 scheme = :BE  # Backward Euler
 
 # Initialize solver
