@@ -115,12 +115,12 @@ function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true
     # Compute interface centroids if requested
     # Use a cache-friendly approach by checking for previously computed values
     if compute_centroids
-        C_γ = computeInterfaceCentroids(mesh, body)
+       # C_γ = computeInterfaceCentroids(mesh, body)
     else
         # Create empty vector of appropriate type based on dimension
         C_γ = Vector{SVector{N,Float64}}(undef, 0)
     end
-    
+    C_γ = bary_interface
     return A, B, V, W, C_ω, C_γ, Γ, cell_types
 end
 
