@@ -14,13 +14,20 @@ mutable struct MovingStokesUnsteadyMono{N}
     fluid::Fluid{N}
     bc_u::NTuple{N, BorderConditions}
     pressure_gauge::AbstractPressureGauge
-    bc_cut::AbstractBoundary
+    bc_cut::NTuple{N, AbstractBoundary}
 
     A::SparseMatrixCSC{Float64, Int}
     b::Vector{Float64}
     x::Vector{Float64}
     states::Vector{Vector{Float64}}
     times::Vector{Float64}
+end
+
+# Normalize cut-cell boundary conditions to one per velocity component
+normalize_cut_bc(bc_cut::AbstractBoundary, N::Int) = ntuple(_ -> bc_cut, N)
+normalize_cut_bc(bc_cut::NTuple{N, AbstractBoundary}, ::Int) where {N} = bc_cut
+function normalize_cut_bc(bc_cut, N::Int)
+    throw(ArgumentError("bc_cut must be an AbstractBoundary or NTuple{$N,AbstractBoundary}; got $(typeof(bc_cut))"))
 end
 
 # Helper functions for time integration weighting (same as diffusion solver)
@@ -75,14 +82,14 @@ Create a solver for the unsteady Stokes problem with prescribed moving geometry.
 - `fluid::Fluid{N}`: The fluid object containing capacities and operators.
 - `bc_u::NTuple{N, BorderConditions}`: The border conditions for velocity components.
 - `pressure_gauge::AbstractPressureGauge`: The pressure gauge (pin or mean).
-- `bc_cut::AbstractBoundary`: The interface/cut-cell boundary conditions for velocity.
+- `bc_cut`: The interface/cut-cell boundary conditions for velocity, either a single `AbstractBoundary` (applied to all components) or an `NTuple{N,AbstractBoundary}` for component-wise values.
 - `scheme::Symbol`: Time integration scheme (:CN or :BE).
 - `x0`: Initial state vector (optional).
 """
 function MovingStokesUnsteadyMono(fluid::Fluid{N},
                                    bc_u::NTuple{N, BorderConditions},
                                    pressure_gauge::AbstractPressureGauge,
-                                   bc_cut::AbstractBoundary;
+                                   bc_cut::Union{AbstractBoundary, NTuple{N, AbstractBoundary}};
                                    scheme::Symbol=:BE,
                                    x0=zeros(0)) where {N}
     println("Solver Creation:")
@@ -102,7 +109,9 @@ function MovingStokesUnsteadyMono(fluid::Fluid{N},
     A = spzeros(Float64, Ntot, Ntot)
     b = zeros(Ntot)
 
-    s = MovingStokesUnsteadyMono{N}(fluid, bc_u, pressure_gauge, bc_cut,
+    cut_bc = normalize_cut_bc(bc_cut, N)
+
+    s = MovingStokesUnsteadyMono{N}(fluid, bc_u, pressure_gauge, cut_bc,
                                      A, b, x_init, Vector{Float64}[], Float64[])
     return s
 end
@@ -112,7 +121,7 @@ function MovingStokesUnsteadyMono(fluid::Fluid{2},
                                    bc_ux::BorderConditions,
                                    bc_uy::BorderConditions,
                                    pressure_gauge::AbstractPressureGauge,
-                                   bc_cut::AbstractBoundary;
+                                   bc_cut::Union{AbstractBoundary, NTuple{2, AbstractBoundary}};
                                    scheme::Symbol=:BE,
                                    x0=zeros(0))
     return MovingStokesUnsteadyMono(fluid, (bc_ux, bc_uy), pressure_gauge, bc_cut;
@@ -345,8 +354,8 @@ function assemble_stokes2D_moving!(s::MovingStokesUnsteadyMono{2}, data, Δt::Fl
     rhs_mom_y .+= load_y
 
     # Interface conditions (cut-cell BC at t_next)
-    g_cut_x = safe_build_g(data.op_ux, s.bc_cut, data.cap_ux, t_next)
-    g_cut_y = safe_build_g(data.op_uy, s.bc_cut, data.cap_uy, t_next)
+    g_cut_x = safe_build_g(data.op_ux, s.bc_cut[1], data.cap_ux, t_next)
+    g_cut_y = safe_build_g(data.op_uy, s.bc_cut[2], data.cap_uy, t_next)
     g_cut_x = g_cut_x[1:end÷2]
     g_cut_y = g_cut_y[1:end÷2]
 
@@ -383,7 +392,7 @@ Solve the unsteady Stokes problem with prescribed moving geometry.
 - `Tₛ::Float64`: Start time.
 - `Tₑ::Float64`: End time.
 - `bc_b_u`: Border conditions for velocity (tuple for 2D).
-- `bc_cut`: Cut-cell/interface boundary condition.
+- `bc_cut`: Cut-cell/interface boundary condition (single value or tuple per component).
 - `scheme::Symbol`: Time scheme (:CN or :BE).
 - `kwargs...`: Additional arguments (e.g., geometry_method).
 """
@@ -392,7 +401,7 @@ function solve_MovingStokesUnsteadyMono!(s::MovingStokesUnsteadyMono{2},
                                           mesh::AbstractMesh,
                                           Δt::Float64, Tₛ::Float64, Tₑ::Float64,
                                           bc_b_u::Tuple{BorderConditions, BorderConditions},
-                                          bc_cut::AbstractBoundary;
+                                          bc_cut::Union{AbstractBoundary, NTuple{2, AbstractBoundary}};
                                           scheme::Symbol=:BE,
                                           method=Base.:\,
                                           algorithm=nothing,
@@ -405,6 +414,10 @@ function solve_MovingStokesUnsteadyMono!(s::MovingStokesUnsteadyMono{2},
     println("- Stokes problem")
 
     θ = scheme == :CN ? 0.5 : 1.0
+
+    # Allow boundary conditions to be provided at solve-time
+    s.bc_u = bc_b_u
+    s.bc_cut = normalize_cut_bc(bc_cut, 2)
 
     # Create mesh_u tuple (staggered grids)
     dx = mesh.nodes[1][2] - mesh.nodes[1][1]

@@ -1,6 +1,8 @@
 using Penguin
 using CairoMakie
 using LinearAlgebra
+#using Observables
+using IterativeSolvers
 
 """
 Unsteady Stokes solution with a prescribed oscillating circle.
@@ -14,7 +16,7 @@ and visualize the velocity field around the moving body.
 ###########
 # Geometry
 ###########
-nx, ny = 32, 32
+nx, ny = 16, 16
 Lx, Ly = 4.0, 4.0
 x0, y0 = -2.0, -2.0
 
@@ -22,7 +24,7 @@ x0, y0 = -2.0, -2.0
 radius = 0.5
 center_x = 0.0
 center_y0 = 0.0     # Initial center position
-A_osc = 0.3          # Oscillation amplitude
+A_osc = 0.5          # Oscillation amplitude
 ω_osc = 2.0 * π      # Angular frequency (one period per unit time)
 
 # Body function: oscillating circle (x, y, t) -> level set
@@ -77,9 +79,11 @@ bc_uy = BorderConditions(Dict(
 pressure_gauge = PinPressureGauge()
 
 # Cut-cell boundary condition: velocity on the moving body surface
-# For this example, we set the interface velocity to zero (no-slip at interface)
-# In a more physical setup, this could be set to match the body velocity
-bc_cut = Dirichlet(0.0)
+# match the body velocity
+bc_cut = (
+    Dirichlet((x,y,t) -> 0.0),  # u_x = 0 on body surface
+    Dirichlet((x,y,t) -> A_osc * ω_osc * cos(ω_osc * t))  # u_y = dy_center/dt
+)
 
 ###########
 # Physics
@@ -123,8 +127,10 @@ times, states = solve_MovingStokesUnsteadyMono!(solver, body, mesh_p,
                                                  (bc_ux, bc_uy), bc_cut;
                                                  scheme=scheme,
                                                  method=Base.:\,
+                                                 #method=IterativeSolvers.gmres,
                                                  geometry_method="VOFI",
-                                                 compute_centroids=false)
+                                                 integration_method=:vofijul,
+                                                 compute_centroids=true)
 
 println("Completed $(length(times)-1) time steps")
 
@@ -192,3 +198,60 @@ end
 
 println("Maximum velocity over time: $(max_velocities)")
 println("Final max velocity: $(max_velocities[end])")
+
+###########
+# Animation of time evolution (GIF)
+###########
+println("Creating animation...")
+
+function animate_oscillating_circle(times, states, mesh_ux, nu_x, nu_y;
+                                   n_frames::Int=50, framerate::Int=8)
+    xs = mesh_ux.nodes[1]
+    ys = mesh_ux.nodes[2]
+
+    # Pick a subset of frames to keep file size manageable
+    n_frames = min(n_frames, length(states))
+    frame_indices = round.(Int, range(1, length(states), length=n_frames))
+
+    # Helper to reshape state -> speed field
+    function state_to_speed(state)
+        uωx = state[1:nu_x]
+        uωy = state[2*nu_x+1:2*nu_x+nu_y]
+        Ux = reshape(uωx, (length(xs), length(ys)))
+        Uy = reshape(uωy, (length(xs), length(ys)))
+        return sqrt.(Ux.^2 .+ Uy.^2)
+    end
+
+    speed_obs = Observable(state_to_speed(states[frame_indices[1]]))
+    title_obs = Observable("Velocity magnitude at t = $(round(times[frame_indices[1]]; digits=3))")
+
+    θ_circle = range(0, 2π, length=120)
+    cy0 = center_y0 + A_osc * sin(ω_osc * times[frame_indices[1]])
+    circle_x_obs = Observable(center_x .+ radius .* cos.(θ_circle))
+    circle_y_obs = Observable(cy0 .+ radius .* sin.(θ_circle))
+
+    fig_anim = Figure(resolution=(900, 520))
+    ax_anim = Axis(fig_anim[1,1], xlabel="x", ylabel="y", title=title_obs, aspect=DataAspect())
+
+    hm_anim = heatmap!(ax_anim, xs, ys, speed_obs; colormap=:plasma)
+    lines!(ax_anim, circle_x_obs, circle_y_obs, color=:white, linewidth=2)
+    Colorbar(fig_anim[1,2], hm_anim, label="Velocity magnitude")
+
+    gif_path = "oscillating_circle_stokes.gif"
+    record(fig_anim, gif_path, 1:n_frames; framerate=framerate) do frame
+        idx = frame_indices[frame]
+        speed_obs[] = state_to_speed(states[idx])
+        t = times[idx]
+        title_obs[] = "Velocity magnitude at t = $(round(t; digits=3))"
+
+        cy = center_y0 + A_osc * sin(ω_osc * t)
+        circle_x_obs[] = center_x .+ radius .* cos.(θ_circle)
+        circle_y_obs[] = cy .+ radius .* sin.(θ_circle)
+    end
+
+    println("Animation saved as $(gif_path)")
+    return gif_path
+end
+
+# Create the animation using all stored states (subsampled inside)
+animate_oscillating_circle(times, states, mesh_ux, nu_x, nu_y)
