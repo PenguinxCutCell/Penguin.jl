@@ -44,10 +44,10 @@ op_ux_b = DiffusionOps(cap_ux_b); op_uy_b = DiffusionOps(cap_uy_b); op_p_b = Dif
 ###########
 # Physical parameters
 ###########
-U0 = 0.0    # bottom wall velocity
+U0 = 0.0    # bottom wall velocity  
 UH = 1.0    # top wall velocity
 G  = 1.0    # pressure gradient magnitude (dp/dx = -G)
-μ_a, μ_b = 1.0, 10.0  # viscosities (phase 1 = lower, phase 2 = upper)
+μ_a, μ_b = 1.0, 2.0  # viscosities (phase 1 = lower, phase 2 = upper)
 ρ_a, ρ_b = 1.0, 1.0
 
 ###########
@@ -73,7 +73,7 @@ pressure_gauges = (PinPressureGauge(), PinPressureGauge())
 ###########
 # Sources and material
 ###########
-fᵤ = (x, y, z=0.0) -> G   # body force equivalent to pressure gradient dp/dx = -G
+fᵤ = (x, y, z=0.0) -> -G   # body force equivalent to pressure gradient dp/dx = -G
 fₚ = (x, y, z=0.0) -> 0.0
 
 fluid_a = Fluid((mesh_ux, mesh_uy),
@@ -141,28 +141,33 @@ Uy1g = reshape(u1γy, (length(xs), length(ys)))
 Uy2g = reshape(u2γy, (length(xs), length(ys)))
 
 ###########
-# Analytical Couette–Poiseuille solution
+# Analytical Couette–Poiseuille solution (corrected)
 ###########
-# Phase 1 (0 ≤ y ≤ d): u1(y) = (G/(2*mu1))*y^2 + A1*y + B1
-# Phase 2 (d ≤ y ≤ H): u2(y) = (G/(2*mu2))*y^2 + A2*y + B2
 mu1, mu2 = μ_a, μ_b
 
-B1 = U0
-A1 = (1/H) * (UH - U0 + (G/2) * ((H^2 - d^2)/mu2 + d^2*(1/mu1 - 1/mu2)))
-A2 = (mu1/mu2)*A1 + d*(G/mu2 - G/mu1)
-B2 = U0 - d*((G/(2*mu1))*d + A1) + d*((G/(2*mu2))*d + A2)
-
-function u_analytical_phase1(y)
-    return (G/(2*mu1))*y^2 + A1*y + B1
+function couette_poiseuille_constants(mu1, mu2, G, U0, UH, H, d)
+    D = mu1 * (H - d) + mu2 * d
+    term_couette = mu2 * (UH - U0) / D
+    term_poiseuille = G * (mu1 * (H^2 - d^2) + mu2 * d^2) / (2 * mu1 * D)
+    C1 = term_couette - term_poiseuille
+    C3 = (mu1 / mu2) * C1
+    C4 = UH - G * H^2 / (2 * mu2) - C3 * H
+    return C1, C3, C4
 end
 
-function u_analytical_phase2(y)
-    return (G/(2*mu2))*y^2 + A2*y + B2
+const_C1, const_C3, const_C4 = couette_poiseuille_constants(mu1, mu2, G, U0, UH, H, d)
+
+function u_exact(y)
+    if y <= d
+        return (G / (2 * mu1)) * y^2 + const_C1 * y + U0
+    else
+        return (G / (2 * mu2)) * y^2 + const_C3 * y + const_C4
+    end
 end
 
 ux_target = similar(ys)
 for (j, y) in enumerate(ys)
-    ux_target[j] = y <= d ? u_analytical_phase1(y) : u_analytical_phase2(y)
+    ux_target[j] = u_exact(y)
 end
 
 ###########
@@ -174,9 +179,9 @@ for (j, y) in enumerate(ys)
     ux_profile[j] = y <= d ? Ux1[icol, j] : Ux2[icol, j]
 end
 
-ux_profile = ux_profile[1:end-1]  # remove top boundary point
-ux_target_plot = ux_target[1:end-1]
-ys_profile = ys[1:end-1]
+ux_profile = ux_profile[2:end-1]  
+ux_target_plot = ux_target[2:end-1]
+ys_profile = ys[2:end-1]
 
 fig = Figure(resolution=(900, 420))
 ax1 = Axis(fig[1, 1], xlabel="u_x", ylabel="y", title="Mid-channel profile (Couette–Poiseuille)")
