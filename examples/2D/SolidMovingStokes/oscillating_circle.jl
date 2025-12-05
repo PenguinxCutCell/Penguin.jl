@@ -16,7 +16,7 @@ and visualize the velocity field around the moving body.
 ###########
 # Geometry
 ###########
-nx, ny = 64, 64
+nx, ny = 128, 128
 Lx, Ly = 4.0, 4.0
 x0, y0 = -2.0, -2.0
 
@@ -26,11 +26,12 @@ center_x = 0.0
 center_y0 = 0.0     # Initial center position
 A_osc = 0.5          # Oscillation amplitude
 ω_osc = 2.0 * π      # Angular frequency (one period per unit time)
+φ_osc = -π/2        # Phase shift so velocity is zero at t=0 (starts at lowest point)
 
 # Body function: oscillating circle (x, y, t) -> level set
 # Positive inside the body, negative outside
 body = (x, y, t) -> begin
-    cy = center_y0 + A_osc * sin(ω_osc * t)
+    cy = center_y0 + A_osc * sin(ω_osc * t + φ_osc)
     return radius - sqrt((x - center_x)^2 + (y - cy)^2)
 end
 
@@ -82,13 +83,13 @@ pressure_gauge = PinPressureGauge()
 # match the body velocity
 bc_cut = (
     Dirichlet((x,y,t) -> 0.0),  # u_x = 0 on body surface
-    Dirichlet((x,y,t) -> A_osc * ω_osc * cos(ω_osc * t))  # u_y = dy_center/dt
+    Dirichlet((x,y,t) -> A_osc * ω_osc * cos(ω_osc * t + φ_osc))  # u_y = dy_center/dt
 )
 
 ###########
 # Physics
 ###########
-μ = 0.1    # Dynamic viscosity
+μ = 1.0    # Dynamic viscosity
 ρ = 1.0    # Density
 fᵤ = (x, y, z=0.0) -> 0.0   # No body force
 fₚ = (x, y, z=0.0) -> 0.0   # No pressure source
@@ -105,7 +106,7 @@ fluid = Fluid((mesh_ux, mesh_uy),
 # Time integration setup
 ###########
 Δt = 0.02
-T_end = 0.5  # Short simulation for testing
+T_end = 1.0  # Short simulation for testing
 scheme = :BE  # Backward Euler
 
 # Initialize solver
@@ -166,7 +167,7 @@ function visualize_oscillating_circle(times, states, mesh_ux,
         
         # Draw interface
         θ_circle = range(0, 2π, length=100)
-        cy = center_y0 + A_osc * sin(ω_osc * t)
+        cy = center_y0 + A_osc * sin(ω_osc * t + φ_osc)
         circle_x = center_x .+ radius .* cos.(θ_circle)
         circle_y = cy .+ radius .* sin.(θ_circle)
         lines!(ax, circle_x, circle_y, color=:white, linewidth=2)
@@ -222,18 +223,26 @@ function animate_oscillating_circle(times, states, mesh_ux, nu_x, nu_y;
         return sqrt.(Ux.^2 .+ Uy.^2)
     end
 
+    # Fix colorbar using min/max over all stored states
+    extrema_pairs = map(states) do st
+        s = state_to_speed(st)
+        return (minimum(s), maximum(s))
+    end
+    global_min = minimum(first, extrema_pairs)
+    global_max = maximum(last, extrema_pairs)
+
     speed_obs = Observable(state_to_speed(states[frame_indices[1]]))
     title_obs = Observable("Velocity magnitude at t = $(round(times[frame_indices[1]]; digits=3))")
 
     θ_circle = range(0, 2π, length=120)
-    cy0 = center_y0 + A_osc * sin(ω_osc * times[frame_indices[1]])
+    cy0 = center_y0 + A_osc * sin(ω_osc * times[frame_indices[1]] + φ_osc)
     circle_x_obs = Observable(center_x .+ radius .* cos.(θ_circle))
     circle_y_obs = Observable(cy0 .+ radius .* sin.(θ_circle))
 
     fig_anim = Figure(resolution=(900, 520))
     ax_anim = Axis(fig_anim[1,1], xlabel="x", ylabel="y", title=title_obs, aspect=DataAspect())
 
-    hm_anim = heatmap!(ax_anim, xs, ys, speed_obs; colormap=:plasma)
+    hm_anim = heatmap!(ax_anim, xs, ys, speed_obs; colormap=:plasma, colorrange=(global_min, global_max))
     lines!(ax_anim, circle_x_obs, circle_y_obs, color=:white, linewidth=2)
     Colorbar(fig_anim[1,2], hm_anim, label="Velocity magnitude")
 
@@ -244,7 +253,7 @@ function animate_oscillating_circle(times, states, mesh_ux, nu_x, nu_y;
         t = times[idx]
         title_obs[] = "Velocity magnitude at t = $(round(t; digits=3))"
 
-        cy = center_y0 + A_osc * sin(ω_osc * t)
+        cy = center_y0 + A_osc * sin(ω_osc * t + φ_osc)
         circle_x_obs[] = center_x .+ radius .* cos.(θ_circle)
         circle_y_obs[] = cy .+ radius .* sin.(θ_circle)
     end
