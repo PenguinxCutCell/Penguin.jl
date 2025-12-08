@@ -113,14 +113,21 @@ function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true
     W = ntuple(i -> i <= length(Ws) ? spdiagm(0 => Ws[i]) : spzeros(0), N)
     
     # Compute interface centroids if requested
-    # Use a cache-friendly approach by checking for previously computed values
     if compute_centroids
-       # C_γ = computeInterfaceCentroids(mesh, body)
+        if N in (1, 2, 3)
+            # use precomputed bary_interface from CartesianGeometry.integrate
+            C_γ = bary_interface
+        elseif N == 4
+            # fallback to explicit computation for 4D
+            C_γ = computeInterfaceCentroids(mesh, body)
+        else
+            # unsupported dims -> empty vector of appropriate SVectors
+            C_γ = Vector{SVector{N,Float64}}(undef, 0)
+        end
     else
-        # Create empty vector of appropriate type based on dimension
         C_γ = Vector{SVector{N,Float64}}(undef, 0)
     end
-    C_γ = bary_interface
+    #C_γ = bary_interface
     return A, B, V, W, C_ω, C_γ, Γ, cell_types
 end
 
