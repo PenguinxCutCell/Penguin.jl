@@ -13,6 +13,8 @@ and visualize the velocity field around the moving body.
 
 NOTE: This is a 3D example and may be computationally expensive.
       Use small grid sizes for testing.
+
+CENTROID COMPUTATION MUST BE DONE WITH IMPLICIT INTEGRATION. VOFIJUL ERROR CENTROID : BUG 4D
 """
 
 ###########
@@ -54,10 +56,10 @@ mesh_uz = Penguin.Mesh((nx, ny, nz), (Lx, Ly, Lz), (x0, y0, z0 - 0.5*dz))
 # Note: These are used only to initialize the Fluid object structure.
 # The solve function recreates capacities at each time step using SpaceTimeMesh.
 ###########
-capacity_ux = Capacity((x,y,z,_=0) -> body(x,y,z,0.0), mesh_ux)
-capacity_uy = Capacity((x,y,z,_=0) -> body(x,y,z,0.0), mesh_uy)
-capacity_uz = Capacity((x,y,z,_=0) -> body(x,y,z,0.0), mesh_uz)
-capacity_p  = Capacity((x,y,z,_=0) -> body(x,y,z,0.0), mesh_p)
+capacity_ux = Capacity((x,y,z,_=0) -> body(x,y,z,0.0), mesh_ux; method = "VOFI", integration_method=:vofijul)
+capacity_uy = Capacity((x,y,z,_=0) -> body(x,y,z,0.0), mesh_uy; method = "VOFI", integration_method=:vofijul)
+capacity_uz = Capacity((x,y,z,_=0) -> body(x,y,z,0.0), mesh_uz; method = "VOFI", integration_method=:vofijul)
+capacity_p  = Capacity((x,y,z,_=0) -> body(x,y,z,0.0), mesh_p; method = "VOFI", integration_method=:vofijul)
 
 operator_ux = DiffusionOps(capacity_ux)
 operator_uy = DiffusionOps(capacity_uy)
@@ -110,8 +112,8 @@ bc_cut = (
 ###########
 μ = 1.0    # Dynamic viscosity
 ρ = 1.0    # Density
-fᵤ = (x, y, z) -> 0.0   # No body force
-fₚ = (x, y, z) -> 0.0   # No pressure source
+fᵤ = (x, y, z, t) -> 0.0   # No body force
+fₚ = (x, y, z, t) -> 0.0   # No pressure source
 
 fluid = Fluid((mesh_ux, mesh_uy, mesh_uz),
               (capacity_ux, capacity_uy, capacity_uz),
@@ -124,7 +126,7 @@ fluid = Fluid((mesh_ux, mesh_uy, mesh_uz),
 ###########
 # Time integration setup
 ###########
-Δt = 0.05
+Δt = 0.1
 T_end = 0.2  # Very short simulation for testing (3D is expensive)
 scheme = :BE  # Backward Euler
 

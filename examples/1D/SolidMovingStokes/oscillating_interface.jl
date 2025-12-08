@@ -65,7 +65,7 @@ pressure_gauge = PinPressureGauge()
 
 # Cut-cell boundary condition: velocity on the moving interface
 # match the interface velocity
-bc_cut = Dirichlet((x,t) -> A_osc * ω_osc * cos(ω_osc * t + φ_osc))
+bc_cut = Dirichlet((x,t, _=0) -> A_osc * ω_osc * cos(ω_osc * t + φ_osc))
 
 ###########
 # Physics
@@ -86,7 +86,7 @@ fluid = Fluid(mesh_u,
 ###########
 # Time integration setup
 ###########
-Δt = 0.02
+Δt = 0.01
 T_end = 1.0  # Short simulation for testing
 scheme = :BE  # Backward Euler
 
@@ -96,7 +96,7 @@ np = prod(operator_p.size)
 Ntot = 2 * nu + np
 x0_vec = zeros(Ntot)
 
-solver = MovingStokesUnsteadyMono(fluid, bc_u, pressure_gauge, bc_cut;
+solver = MovingStokesUnsteadyMono(fluid, (bc_u,), pressure_gauge, bc_cut;
                                    scheme=scheme, x0=x0_vec)
 
 println("Running prescribed motion Stokes (oscillating interface)")

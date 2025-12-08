@@ -178,8 +178,8 @@ function stokes1D_moving_blocks(fluid::Fluid{1},
     V_u = op_u.V[1:end÷2, 1:end÷2]
     
     # Pressure operators (space-time)
-    G_p = op_p.G[1:end÷2, 1:end÷2]
-    H_p = op_p.H[1:end÷2, 1:end÷2]
+    G_p_full = op_p.G[1:end÷2, 1:end÷2]
+    H_p_full = op_p.H[1:end÷2, 1:end÷2]
     
     # Build viscosity operators
     μ = fluid.μ
@@ -190,12 +190,24 @@ function stokes1D_moving_blocks(fluid::Fluid{1},
     visc_uω = Iμ_u * G_u' * W_u * G_u
     visc_uγ = Iμ_u * G_u' * W_u * H_u
     
-    # Pressure gradient
-    grad = -(G_p + H_p)
+    # Pressure gradient (only keep the n+1 velocity rows)
+    grad_full = G_p_full + H_p_full
+    total_grad_rows = size(grad_full, 1)
+    if total_grad_rows >= nu
+        grad = -grad_full[1:nu, :]
+    else
+        error("Pressure gradient operator has unexpected dimensions: expected at least $nu rows, got $total_grad_rows")
+    end
     
-    # Divergence operators
-    div_uω = -(G_p' + H_p')
-    div_uγ = H_p'
+    # Divergence operators (matching the truncated gradient rows)
+    if total_grad_rows >= nu
+        Gp = G_p_full[1:nu, :]
+        Hp = H_p_full[1:nu, :]
+        div_uω = -(Gp' + Hp')
+        div_uγ = Hp'
+    else
+        error("Divergence operator has unexpected dimensions: expected at least $nu rows, got $total_grad_rows")
+    end
     
     # Mass matrices for density
     ρ = fluid.ρ
