@@ -264,6 +264,8 @@ function stokes2D_moving_blocks(fluid::Fluid{2},
     Vn_ux = caps_u[1].A[cap_index][end÷2+1:end, end÷2+1:end]
     Vn_1_uy = caps_u[2].A[cap_index][1:end÷2, 1:end÷2]
     Vn_uy = caps_u[2].A[cap_index][end÷2+1:end, end÷2+1:end]
+    Vn_1_p = cap_p.A[cap_index][1:end÷2, 1:end÷2]
+    Vn_p = cap_p.A[cap_index][end÷2+1:end, end÷2+1:end]
 
     # Time integration weighting
     if scheme == :CN
@@ -274,8 +276,10 @@ function stokes2D_moving_blocks(fluid::Fluid{2},
 
     Ψn1_ux = Diagonal(psip.(Vn_ux, Vn_1_ux))
     Ψn1_uy = Diagonal(psip.(Vn_uy, Vn_1_uy))
+    Ψn1_p = Diagonal(psip.(Vn_p, Vn_1_p))
     Ψn_ux = Diagonal(psim.(Vn_ux, Vn_1_ux))
     Ψn_uy = Diagonal(psim.(Vn_uy, Vn_1_uy))
+    Ψn_p = Diagonal(psim.(Vn_p, Vn_1_p))
 
     # Extract operator sub-blocks (n+1 time level, first half)
     W_ux = ops_u[1].Wꜝ[1:end÷2, 1:end÷2]
@@ -352,7 +356,7 @@ function stokes2D_moving_blocks(fluid::Fluid{2},
             mass_x, mass_y,
             Vx=V_ux, Vy=V_uy,
             Vn_1_ux, Vn_ux, Vn_1_uy, Vn_uy,
-            Ψn1_ux, Ψn1_uy, Ψn_ux, Ψn_uy)
+            Ψn1_ux, Ψn1_uy, Ψn_ux, Ψn_uy, Ψn1_p, Ψn_p)
 end
 
 """
