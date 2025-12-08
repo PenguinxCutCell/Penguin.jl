@@ -129,6 +129,93 @@ function MovingStokesUnsteadyMono(fluid::Fluid{2},
 end
 
 """
+    stokes1D_moving_blocks(fluid, op_u, cap_u, op_p, cap_p, scheme)
+
+Build operator blocks for moving 1D Stokes problem using SpaceTime operators.
+Similar to stokes1D_blocks but extracts V^{n+1} and V^{n} from capacity.A.
+"""
+function stokes1D_moving_blocks(fluid::Fluid{1}, 
+                                 op_u::DiffusionOps,
+                                 cap_u::Capacity,
+                                 op_p::DiffusionOps,
+                                 cap_p::Capacity,
+                                 scheme::Symbol)
+    # Operator sizes (for space-time mesh, dims = (nx, nt))
+    dims_u = op_u.size
+    dims_p = op_p.size
+    
+    len_dims = length(dims_u)
+    cap_index = len_dims  # 2 for 1D (nx, nt)
+    
+    # Extract spatial sizes
+    if len_dims == 2
+        nx_u, _ = dims_u
+        nx_p, _ = dims_p
+        nu = nx_u
+        np = nx_p
+    else
+        error("Moving Stokes 1D requires 2D space-time mesh (nx, nt)")
+    end
+    
+    # Extract V^{n+1} and V^{n} for velocity component
+    Vn_1_u = cap_u.A[cap_index][1:end÷2, 1:end÷2]
+    Vn_u = cap_u.A[cap_index][end÷2+1:end, end÷2+1:end]
+    
+    # Time integration weighting
+    if scheme == :CN
+        psip, psim = psip_stokes_cn, psim_stokes_cn
+    else
+        psip, psim = psip_stokes_be, psim_stokes_be
+    end
+    
+    Ψn1_u = Diagonal(psip.(Vn_u, Vn_1_u))
+    Ψn_u = Diagonal(psim.(Vn_u, Vn_1_u))
+    
+    # Extract operator sub-blocks (n+1 time level, first half)
+    W_u = op_u.Wꜝ[1:end÷2, 1:end÷2]
+    G_u = op_u.G[1:end÷2, 1:end÷2]
+    H_u = op_u.H[1:end÷2, 1:end÷2]
+    V_u = op_u.V[1:end÷2, 1:end÷2]
+    
+    # Pressure operators (space-time)
+    G_p = op_p.G[1:end÷2, 1:end÷2]
+    H_p = op_p.H[1:end÷2, 1:end÷2]
+    
+    # Build viscosity operators
+    μ = fluid.μ
+    Iμ_u = build_I_D(op_u, μ, cap_u)
+    Iμ_u = Iμ_u[1:end÷2, 1:end÷2]
+    
+    # Viscous blocks
+    visc_uω = Iμ_u * G_u' * W_u * G_u
+    visc_uγ = Iμ_u * G_u' * W_u * H_u
+    
+    # Pressure gradient
+    grad = -(G_p + H_p)
+    
+    # Divergence operators
+    div_uω = -(G_p' + H_p')
+    div_uγ = H_p'
+    
+    # Mass matrices for density
+    ρ = fluid.ρ
+    mass = build_I_D(op_u, ρ, cap_u)
+    mass = mass[1:end÷2, 1:end÷2] * V_u
+    
+    return (; nu, np,
+            op_u, op_p,
+            cap_u, cap_p,
+            visc_uω, visc_uγ,
+            grad,
+            div_uω, div_uγ,
+            tie=I(nu),
+            mass,
+            V=V_u,
+            Vn_1_u, Vn_u,
+            Ψn1_u, Ψn_u)
+end
+
+"""
     stokes2D_moving_blocks(fluid, ops_u, caps_u, op_p, cap_p)
 
 Build operator blocks for moving 2D Stokes problem using SpaceTime operators.
@@ -257,6 +344,246 @@ function stokes2D_moving_blocks(fluid::Fluid{2},
 end
 
 """
+    stokes3D_moving_blocks(fluid, ops_u, caps_u, op_p, cap_p, scheme)
+
+Build operator blocks for moving 3D Stokes problem using SpaceTime operators.
+Similar to stokes3D_blocks but extracts V^{n+1} and V^{n} from capacity.A.
+"""
+function stokes3D_moving_blocks(fluid::Fluid{3}, 
+                                 ops_u::Tuple{DiffusionOps, DiffusionOps, DiffusionOps},
+                                 caps_u::Tuple{Capacity, Capacity, Capacity},
+                                 op_p::DiffusionOps,
+                                 cap_p::Capacity,
+                                 scheme::Symbol)
+    # Operator sizes (for space-time mesh, dims = (nx, ny, nz, nt))
+    dims_ux = ops_u[1].size
+    dims_uy = ops_u[2].size
+    dims_uz = ops_u[3].size
+    dims_p = op_p.size
+    
+    len_dims = length(dims_ux)
+    cap_index = len_dims  # 4 for 3D (nx, ny, nz, nt)
+    
+    # Extract spatial sizes
+    if len_dims == 4
+        nx_ux, ny_ux, nz_ux, _ = dims_ux
+        nx_uy, ny_uy, nz_uy, _ = dims_uy
+        nx_uz, ny_uz, nz_uz, _ = dims_uz
+        nx_p, ny_p, nz_p, _ = dims_p
+        nu_x = nx_ux * ny_ux * nz_ux
+        nu_y = nx_uy * ny_uy * nz_uy
+        nu_z = nx_uz * ny_uz * nz_uz
+        np = nx_p * ny_p * nz_p
+    else
+        error("Moving Stokes 3D requires 4D space-time mesh (nx, ny, nz, nt)")
+    end
+    
+    # Extract V^{n+1} and V^{n} for each velocity component
+    Vn_1_ux = caps_u[1].A[cap_index][1:end÷2, 1:end÷2]
+    Vn_ux = caps_u[1].A[cap_index][end÷2+1:end, end÷2+1:end]
+    Vn_1_uy = caps_u[2].A[cap_index][1:end÷2, 1:end÷2]
+    Vn_uy = caps_u[2].A[cap_index][end÷2+1:end, end÷2+1:end]
+    Vn_1_uz = caps_u[3].A[cap_index][1:end÷2, 1:end÷2]
+    Vn_uz = caps_u[3].A[cap_index][end÷2+1:end, end÷2+1:end]
+    
+    # Time integration weighting
+    if scheme == :CN
+        psip, psim = psip_stokes_cn, psim_stokes_cn
+    else
+        psip, psim = psip_stokes_be, psim_stokes_be
+    end
+    
+    Ψn1_ux = Diagonal(psip.(Vn_ux, Vn_1_ux))
+    Ψn1_uy = Diagonal(psip.(Vn_uy, Vn_1_uy))
+    Ψn1_uz = Diagonal(psip.(Vn_uz, Vn_1_uz))
+    Ψn_ux = Diagonal(psim.(Vn_ux, Vn_1_ux))
+    Ψn_uy = Diagonal(psim.(Vn_uy, Vn_1_uy))
+    Ψn_uz = Diagonal(psim.(Vn_uz, Vn_1_uz))
+    
+    # Extract operator sub-blocks (n+1 time level, first half)
+    W_ux = ops_u[1].Wꜝ[1:end÷2, 1:end÷2]
+    G_ux = ops_u[1].G[1:end÷2, 1:end÷2]
+    H_ux = ops_u[1].H[1:end÷2, 1:end÷2]
+    V_ux = ops_u[1].V[1:end÷2, 1:end÷2]
+    
+    W_uy = ops_u[2].Wꜝ[1:end÷2, 1:end÷2]
+    G_uy = ops_u[2].G[1:end÷2, 1:end÷2]
+    H_uy = ops_u[2].H[1:end÷2, 1:end÷2]
+    V_uy = ops_u[2].V[1:end÷2, 1:end÷2]
+    
+    W_uz = ops_u[3].Wꜝ[1:end÷2, 1:end÷2]
+    G_uz = ops_u[3].G[1:end÷2, 1:end÷2]
+    H_uz = ops_u[3].H[1:end÷2, 1:end÷2]
+    V_uz = ops_u[3].V[1:end÷2, 1:end÷2]
+    
+    # Pressure operators (space-time)
+    G_p_full = op_p.G[1:end÷2, 1:end÷2]
+    H_p_full = op_p.H[1:end÷2, 1:end÷2]
+    
+    # Build viscosity operators
+    μ = fluid.μ
+    Iμ_ux = build_I_D(ops_u[1], μ, caps_u[1])
+    Iμ_uy = build_I_D(ops_u[2], μ, caps_u[2])
+    Iμ_uz = build_I_D(ops_u[3], μ, caps_u[3])
+    Iμ_ux = Iμ_ux[1:end÷2, 1:end÷2]
+    Iμ_uy = Iμ_uy[1:end÷2, 1:end÷2]
+    Iμ_uz = Iμ_uz[1:end÷2, 1:end÷2]
+    
+    # Viscous blocks
+    visc_x_ω = Iμ_ux * G_ux' * W_ux * G_ux
+    visc_x_γ = Iμ_ux * G_ux' * W_ux * H_ux
+    visc_y_ω = Iμ_uy * G_uy' * W_uy * G_uy
+    visc_y_γ = Iμ_uy * G_uy' * W_uy * H_uy
+    visc_z_ω = Iμ_uz * G_uz' * W_uz * G_uz
+    visc_z_γ = Iμ_uz * G_uz' * W_uz * H_uz
+    
+    # Pressure gradient (need to extract x, y, and z rows)
+    grad_full = G_p_full + H_p_full
+    total_grad_rows = size(grad_full, 1)
+    
+    # For staggered grids, grad should map pressure to velocity DOFs
+    x_rows = 1:nu_x
+    y_rows = nu_x+1:nu_x+nu_y
+    z_rows = nu_x+nu_y+1:nu_x+nu_y+nu_z
+    
+    if total_grad_rows >= nu_x + nu_y + nu_z
+        grad_x = -grad_full[x_rows, :]
+        grad_y = -grad_full[y_rows, :]
+        grad_z = -grad_full[z_rows, :]
+    else
+        error("Pressure gradient operator has unexpected dimensions: expected $(nu_x + nu_y + nu_z) rows, got $(total_grad_rows)")
+    end
+    
+    # Divergence operators
+    Gp_x = G_p_full[x_rows, :]
+    Hp_x = H_p_full[x_rows, :]
+    Gp_y = G_p_full[y_rows, :]
+    Hp_y = H_p_full[y_rows, :]
+    Gp_z = G_p_full[z_rows, :]
+    Hp_z = H_p_full[z_rows, :]
+    
+    if total_grad_rows >= nu_x + nu_y + nu_z
+        div_x_ω = -(Gp_x' + Hp_x')
+        div_x_γ = Hp_x'
+        div_y_ω = -(Gp_y' + Hp_y')
+        div_y_γ = Hp_y'
+        div_z_ω = -(Gp_z' + Hp_z')
+        div_z_γ = Hp_z'
+    else
+        error("Divergence operator has unexpected dimensions: expected $(nu_x + nu_y + nu_z) rows, got $(total_grad_rows)")
+    end
+    
+    # Mass matrices for density
+    ρ = fluid.ρ
+    mass_x = build_I_D(ops_u[1], ρ, caps_u[1])
+    mass_y = build_I_D(ops_u[2], ρ, caps_u[2])
+    mass_z = build_I_D(ops_u[3], ρ, caps_u[3])
+    mass_x = mass_x[1:end÷2, 1:end÷2] * V_ux
+    mass_y = mass_y[1:end÷2, 1:end÷2] * V_uy
+    mass_z = mass_z[1:end÷2, 1:end÷2] * V_uz
+    
+    return (; nu_x, nu_y, nu_z, np,
+            op_ux=ops_u[1], op_uy=ops_u[2], op_uz=ops_u[3], op_p,
+            cap_ux=caps_u[1], cap_uy=caps_u[2], cap_uz=caps_u[3], cap_p,
+            visc_x_ω, visc_x_γ, visc_y_ω, visc_y_γ, visc_z_ω, visc_z_γ,
+            grad_x, grad_y, grad_z,
+            div_x_ω, div_x_γ, div_y_ω, div_y_γ, div_z_ω, div_z_γ,
+            tie_x=I(nu_x), tie_y=I(nu_y), tie_z=I(nu_z),
+            mass_x, mass_y, mass_z,
+            Vx=V_ux, Vy=V_uy, Vz=V_uz,
+            Vn_1_ux, Vn_ux, Vn_1_uy, Vn_uy, Vn_1_uz, Vn_uz,
+            Ψn1_ux, Ψn1_uy, Ψn1_uz, Ψn_ux, Ψn_uy, Ψn_uz)
+end
+
+"""
+    assemble_stokes1D_moving!(s, data, Δt, x_prev, t_prev, t_next, θ, mesh)
+
+Assemble the system matrix and RHS for moving 1D Stokes.
+Accounts for V^{n+1}, V^{n}, and -(Vn_1 - Vn) terms.
+
+For the moving case, similar to MovingDiffusionUnsteadyMono:
+- LHS block (ω,ω): Vn_1 + θ * visc_ω * Ψn1
+- LHS block (ω,γ): -(Vn_1 - Vn) + θ * visc_γ * Ψn1  
+- RHS: Vn * u_prev + source terms
+"""
+function assemble_stokes1D_moving!(s::MovingStokesUnsteadyMono{1}, data, Δt::Float64,
+                                    x_prev::AbstractVector{<:Real},
+                                    t_prev::Float64, t_next::Float64,
+                                    θ::Float64, mesh::AbstractMesh)
+    nu = data.nu
+    np = data.np
+    
+    rows = 2 * nu + np
+    cols = 2 * nu + np
+    A = spzeros(Float64, rows, cols)
+    
+    θc = 1.0 - θ
+    
+    # Column offsets
+    off_uω = 0
+    off_uγ = nu
+    off_p = 2 * nu
+    
+    # Row offsets
+    row_uω = 0
+    row_uγ = nu
+    row_con = 2 * nu
+    
+    # Following the pattern from MovingDiffusionUnsteadyMono:
+    # LHS block (ω,ω): Vn_1 + θ * visc_ω * Ψn1
+    # LHS block (ω,γ): -(Vn_1 - Vn) + θ * visc_γ * Ψn1
+    # Note: visc terms are already built as G' W G (positive definite form)
+    
+    # Momentum rows
+    A[row_uω+1:row_uω+nu, off_uω+1:off_uω+nu] = data.Vn_1_u + θ * data.visc_uω * data.Ψn1_u
+    A[row_uω+1:row_uω+nu, off_uγ+1:off_uγ+nu] = -(data.Vn_1_u - data.Vn_u) + θ * data.visc_uγ * data.Ψn1_u
+    A[row_uω+1:row_uω+nu, off_p+1:off_p+np] = data.grad
+    
+    # Tie rows
+    A[row_uγ+1:row_uγ+nu, off_uγ+1:off_uγ+nu] = data.tie
+    
+    # Continuity rows
+    con_rows = row_con+1:row_con+np
+    A[con_rows, off_uω+1:off_uω+nu] = data.div_uω
+    A[con_rows, off_uγ+1:off_uγ+nu] = data.div_uγ
+    
+    # Extract previous state
+    uω_prev = view(x_prev, off_uω+1:off_uω+nu)
+    uγ_prev = view(x_prev, off_uγ+1:off_uγ+nu)
+    
+    # Build source terms
+    f_prev = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_prev)
+    f_next = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_next)
+    f_prev = f_prev[1:end÷2]
+    f_next = f_next[1:end÷2]
+    load = data.V * (θ .* f_next .+ θc .* f_prev)
+    
+    # RHS momentum with previous time level contribution
+    # Following the diffusion pattern: b1 = (Vn - θc * visc_ω * Ψn) * u_prev - θc * visc_γ * Ψn * uγ_prev + source
+    rhs_mom = (data.Vn_u - θc * data.visc_uω * data.Ψn_u) * uω_prev
+    rhs_mom .-= θc * data.visc_uγ * data.Ψn_u * uγ_prev
+    rhs_mom .+= load
+    
+    # Interface conditions (cut-cell BC at t_next)
+    g_cut = safe_build_g(data.op_u, s.bc_cut[1], data.cap_u, t_next)
+    g_cut = g_cut[1:end÷2]
+    
+    b = vcat(rhs_mom, g_cut, zeros(np))
+    
+    # Apply velocity Dirichlet BCs
+    apply_velocity_dirichlet!(A, b, s.bc_u[1], s.fluid.mesh_u[1];
+                              nu=nu, uω_offset=off_uω, uγ_offset=off_uγ, t=t_next)
+    
+    # Apply pressure gauge
+    apply_pressure_gauge!(A, b, s.pressure_gauge, s.fluid.mesh_p, s.fluid.capacity_p;
+                          p_offset=off_p, np=np, row_start=row_con+1)
+    
+    s.A = A
+    s.b = b
+    return nothing
+end
+
+"""
     assemble_stokes2D_moving!(s, data, Δt, x_prev, t_prev, t_next, θ, mesh)
 
 Assemble the system matrix and RHS for moving 2D Stokes.
@@ -380,6 +707,257 @@ function assemble_stokes2D_moving!(s::MovingStokesUnsteadyMono{2}, data, Δt::Fl
 end
 
 """
+    assemble_stokes3D_moving!(s, data, Δt, x_prev, t_prev, t_next, θ, mesh)
+
+Assemble the system matrix and RHS for moving 3D Stokes.
+Accounts for V^{n+1}, V^{n}, and -(Vn_1 - Vn) terms.
+
+For the moving case, similar to MovingDiffusionUnsteadyMono:
+- LHS block (ω,ω): Vn_1 + θ * visc_ω * Ψn1
+- LHS block (ω,γ): -(Vn_1 - Vn) + θ * visc_γ * Ψn1  
+- RHS: Vn * u_prev + source terms
+"""
+function assemble_stokes3D_moving!(s::MovingStokesUnsteadyMono{3}, data, Δt::Float64,
+                                    x_prev::AbstractVector{<:Real},
+                                    t_prev::Float64, t_next::Float64,
+                                    θ::Float64, mesh::AbstractMesh)
+    nu_x = data.nu_x
+    nu_y = data.nu_y
+    nu_z = data.nu_z
+    sum_nu = nu_x + nu_y + nu_z
+    np = data.np
+    
+    rows = 2 * sum_nu + np
+    cols = 2 * sum_nu + np
+    A = spzeros(Float64, rows, cols)
+    
+    θc = 1.0 - θ
+    
+    # Column offsets
+    off_uωx = 0
+    off_uγx = nu_x
+    off_uωy = 2 * nu_x
+    off_uγy = 2 * nu_x + nu_y
+    off_uωz = 2 * nu_x + 2 * nu_y
+    off_uγz = 2 * nu_x + 2 * nu_y + nu_z
+    off_p = 2 * sum_nu
+    
+    # Row offsets
+    row_uωx = 0
+    row_uγx = nu_x
+    row_uωy = 2 * nu_x
+    row_uγy = 2 * nu_x + nu_y
+    row_uωz = 2 * nu_x + 2 * nu_y
+    row_uγz = 2 * nu_x + 2 * nu_y + nu_z
+    row_con = 2 * sum_nu
+    
+    # Following the pattern from MovingDiffusionUnsteadyMono:
+    # LHS block (ω,ω): Vn_1 + θ * visc_ω * Ψn1
+    # LHS block (ω,γ): -(Vn_1 - Vn) + θ * visc_γ * Ψn1
+    # Note: visc terms are already built as G' W G (positive definite form)
+    
+    # Momentum x-component rows
+    A[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = data.Vn_1_ux + θ * data.visc_x_ω * data.Ψn1_ux
+    A[row_uωx+1:row_uωx+nu_x, off_uγx+1:off_uγx+nu_x] = -(data.Vn_1_ux - data.Vn_ux) + θ * data.visc_x_γ * data.Ψn1_ux
+    A[row_uωx+1:row_uωx+nu_x, off_p+1:off_p+np] = data.grad_x
+    
+    # Tie x rows
+    A[row_uγx+1:row_uγx+nu_x, off_uγx+1:off_uγx+nu_x] = data.tie_x
+    
+    # Momentum y-component rows
+    A[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = data.Vn_1_uy + θ * data.visc_y_ω * data.Ψn1_uy
+    A[row_uωy+1:row_uωy+nu_y, off_uγy+1:off_uγy+nu_y] = -(data.Vn_1_uy - data.Vn_uy) + θ * data.visc_y_γ * data.Ψn1_uy
+    A[row_uωy+1:row_uωy+nu_y, off_p+1:off_p+np] = data.grad_y
+    
+    # Tie y rows
+    A[row_uγy+1:row_uγy+nu_y, off_uγy+1:off_uγy+nu_y] = data.tie_y
+    
+    # Momentum z-component rows
+    A[row_uωz+1:row_uωz+nu_z, off_uωz+1:off_uωz+nu_z] = data.Vn_1_uz + θ * data.visc_z_ω * data.Ψn1_uz
+    A[row_uωz+1:row_uωz+nu_z, off_uγz+1:off_uγz+nu_z] = -(data.Vn_1_uz - data.Vn_uz) + θ * data.visc_z_γ * data.Ψn1_uz
+    A[row_uωz+1:row_uωz+nu_z, off_p+1:off_p+np] = data.grad_z
+    
+    # Tie z rows
+    A[row_uγz+1:row_uγz+nu_z, off_uγz+1:off_uγz+nu_z] = data.tie_z
+    
+    # Continuity rows
+    con_rows = row_con+1:row_con+np
+    A[con_rows, off_uωx+1:off_uωx+nu_x] = data.div_x_ω
+    A[con_rows, off_uγx+1:off_uγx+nu_x] = data.div_x_γ
+    A[con_rows, off_uωy+1:off_uωy+nu_y] = data.div_y_ω
+    A[con_rows, off_uγy+1:off_uγy+nu_y] = data.div_y_γ
+    A[con_rows, off_uωz+1:off_uωz+nu_z] = data.div_z_ω
+    A[con_rows, off_uγz+1:off_uγz+nu_z] = data.div_z_γ
+    
+    # Extract previous state
+    uωx_prev = view(x_prev, off_uωx+1:off_uωx+nu_x)
+    uγx_prev = view(x_prev, off_uγx+1:off_uγx+nu_x)
+    uωy_prev = view(x_prev, off_uωy+1:off_uωy+nu_y)
+    uγy_prev = view(x_prev, off_uγy+1:off_uγy+nu_y)
+    uωz_prev = view(x_prev, off_uωz+1:off_uωz+nu_z)
+    uγz_prev = view(x_prev, off_uγz+1:off_uγz+nu_z)
+    
+    # Build source terms
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_ux, t_prev)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_ux, t_next)
+    f_prev_x = f_prev_x[1:end÷2]
+    f_next_x = f_next_x[1:end÷2]
+    load_x = data.Vx * (θ .* f_next_x .+ θc .* f_prev_x)
+    
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_uy, t_prev)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_uy, t_next)
+    f_prev_y = f_prev_y[1:end÷2]
+    f_next_y = f_next_y[1:end÷2]
+    load_y = data.Vy * (θ .* f_next_y .+ θc .* f_prev_y)
+    
+    f_prev_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_uz, t_prev)
+    f_next_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_uz, t_next)
+    f_prev_z = f_prev_z[1:end÷2]
+    f_next_z = f_next_z[1:end÷2]
+    load_z = data.Vz * (θ .* f_next_z .+ θc .* f_prev_z)
+    
+    # RHS momentum with previous time level contribution
+    # Following the diffusion pattern: b1 = (Vn - θc * visc_ω * Ψn) * u_prev - θc * visc_γ * Ψn * uγ_prev + source
+    rhs_mom_x = (data.Vn_ux - θc * data.visc_x_ω * data.Ψn_ux) * uωx_prev
+    rhs_mom_x .-= θc * data.visc_x_γ * data.Ψn_ux * uγx_prev
+    rhs_mom_x .+= load_x
+    
+    rhs_mom_y = (data.Vn_uy - θc * data.visc_y_ω * data.Ψn_uy) * uωy_prev
+    rhs_mom_y .-= θc * data.visc_y_γ * data.Ψn_uy * uγy_prev
+    rhs_mom_y .+= load_y
+    
+    rhs_mom_z = (data.Vn_uz - θc * data.visc_z_ω * data.Ψn_uz) * uωz_prev
+    rhs_mom_z .-= θc * data.visc_z_γ * data.Ψn_uz * uγz_prev
+    rhs_mom_z .+= load_z
+    
+    # Interface conditions (cut-cell BC at t_next)
+    g_cut_x = safe_build_g(data.op_ux, s.bc_cut[1], data.cap_ux, t_next)
+    g_cut_y = safe_build_g(data.op_uy, s.bc_cut[2], data.cap_uy, t_next)
+    g_cut_z = safe_build_g(data.op_uz, s.bc_cut[3], data.cap_uz, t_next)
+    g_cut_x = g_cut_x[1:end÷2]
+    g_cut_y = g_cut_y[1:end÷2]
+    g_cut_z = g_cut_z[1:end÷2]
+    
+    b = vcat(rhs_mom_x, g_cut_x, rhs_mom_y, g_cut_y, rhs_mom_z, g_cut_z, zeros(np))
+    
+    # Apply velocity Dirichlet BCs
+    apply_velocity_dirichlet_3D!(A, b, s.bc_u[1], s.bc_u[2], s.bc_u[3], s.fluid.mesh_u;
+                                  nu_x=nu_x, nu_y=nu_y, nu_z=nu_z,
+                                  uωx_off=off_uωx, uγx_off=off_uγx,
+                                  uωy_off=off_uωy, uγy_off=off_uγy,
+                                  uωz_off=off_uωz, uγz_off=off_uγz,
+                                  row_uωx_off=row_uωx, row_uγx_off=row_uγx,
+                                  row_uωy_off=row_uωy, row_uγy_off=row_uγy,
+                                  row_uωz_off=row_uωz, row_uγz_off=row_uγz,
+                                  t=t_next)
+    
+    # Apply pressure gauge
+    apply_pressure_gauge!(A, b, s.pressure_gauge, s.fluid.mesh_p, s.fluid.capacity_p;
+                          p_offset=off_p, np=np, row_start=row_con+1)
+    
+    s.A = A
+    s.b = b
+    return nothing
+end
+
+"""
+    solve_MovingStokesUnsteadyMono!(s, body, mesh, Δt, Tₛ, Tₑ, bc_b_u, bc_cut; scheme=:BE, kwargs...)
+
+Solve the unsteady 1D Stokes problem with prescribed moving geometry.
+
+# Arguments
+- `s::MovingStokesUnsteadyMono{1}`: The solver object.
+- `body::Function`: Body function (x, t) defining the geometry.
+- `mesh::AbstractMesh`: The base spatial mesh.
+- `Δt::Float64`: Time step.
+- `Tₛ::Float64`: Start time.
+- `Tₑ::Float64`: End time.
+- `bc_b_u`: Border conditions for velocity.
+- `bc_cut`: Cut-cell/interface boundary condition.
+- `scheme::Symbol`: Time scheme (:CN or :BE).
+- `kwargs...`: Additional arguments (e.g., geometry_method).
+"""
+function solve_MovingStokesUnsteadyMono!(s::MovingStokesUnsteadyMono{1},
+                                          body::Function,
+                                          mesh::AbstractMesh,
+                                          Δt::Float64, Tₛ::Float64, Tₑ::Float64,
+                                          bc_b_u::BorderConditions,
+                                          bc_cut::AbstractBoundary;
+                                          scheme::Symbol=:BE,
+                                          method=Base.:\,
+                                          algorithm=nothing,
+                                          geometry_method::String="VOFI",
+                                          kwargs...)
+    println("Solving the problem:")
+    println("- Moving problem")
+    println("- Monophasic problem")
+    println("- Unsteady problem")
+    println("- Stokes problem (1D)")
+    
+    θ = scheme == :CN ? 0.5 : 1.0
+    
+    # Allow boundary conditions to be provided at solve-time
+    s.bc_u = (bc_b_u,)
+    s.bc_cut = normalize_cut_bc(bc_cut, 1)
+    
+    # Create mesh_u (staggered grid)
+    dx = mesh.nodes[1][2] - mesh.nodes[1][1]
+    mesh_u = Penguin.Mesh((length(mesh.nodes[1])-1,),
+                           (mesh.nodes[1][end] - mesh.nodes[1][1],),
+                           (mesh.nodes[1][1] - 0.5*dx,))
+    
+    # Store times and initial state
+    t = Tₛ
+    push!(s.times, t)
+    push!(s.states, copy(s.x))
+    
+    println("Time : $(t)")
+    
+    # Time loop
+    while t < Tₑ - 1e-12 * max(1.0, Tₑ)
+        dt_step = min(Δt, Tₑ - t)
+        t_next = t + dt_step
+        
+        println("Time : $(t_next)")
+        
+        # Create SpaceTime meshes for this time interval
+        STmesh_u = Penguin.SpaceTimeMesh(mesh_u, [t, t_next], tag=mesh.tag)
+        STmesh_p = Penguin.SpaceTimeMesh(mesh, [t, t_next], tag=mesh.tag)
+        
+        # Build capacities with moving body
+        capacity_u = Capacity(body, STmesh_u; method=geometry_method, kwargs...)
+        capacity_p = Capacity(body, STmesh_p; method=geometry_method, kwargs...)
+        
+        # Build operators
+        operator_u = DiffusionOps(capacity_u)
+        operator_p = DiffusionOps(capacity_p)
+        
+        # Build blocks for this time step
+        data = stokes1D_moving_blocks(s.fluid,
+                                       operator_u,
+                                       capacity_u,
+                                       operator_p, capacity_p,
+                                       scheme)
+        
+        # Assemble system
+        x_prev = s.x
+        assemble_stokes1D_moving!(s, data, dt_step, x_prev, t, t_next, θ, mesh)
+        
+        # Solve system
+        solve_moving_stokes_linear_system!(s; method=method, algorithm=algorithm, kwargs...)
+        
+        # Store result
+        push!(s.times, t_next)
+        push!(s.states, copy(s.x))
+        println("Solver Extremum : ", maximum(abs.(s.x)))
+        
+        t = t_next
+    end
+    
+    return s.times, s.states
+end
+
+"""
     solve_MovingStokesUnsteadyMono!(s, body, mesh, Δt, Tₛ, Tₑ, bc_b_u, bc_cut; scheme=:BE, kwargs...)
 
 Solve the unsteady Stokes problem with prescribed moving geometry.
@@ -480,6 +1058,117 @@ function solve_MovingStokesUnsteadyMono!(s::MovingStokesUnsteadyMono{2},
         t = t_next
     end
 
+    return s.times, s.states
+end
+
+"""
+    solve_MovingStokesUnsteadyMono!(s, body, mesh, Δt, Tₛ, Tₑ, bc_b_u, bc_cut; scheme=:BE, kwargs...)
+
+Solve the unsteady 3D Stokes problem with prescribed moving geometry.
+
+# Arguments
+- `s::MovingStokesUnsteadyMono{3}`: The solver object.
+- `body::Function`: Body function (x, y, z, t) defining the geometry.
+- `mesh::AbstractMesh`: The base spatial mesh.
+- `Δt::Float64`: Time step.
+- `Tₛ::Float64`: Start time.
+- `Tₑ::Float64`: End time.
+- `bc_b_u`: Border conditions for velocity (tuple for 3D).
+- `bc_cut`: Cut-cell/interface boundary condition (single value or tuple per component).
+- `scheme::Symbol`: Time scheme (:CN or :BE).
+- `kwargs...`: Additional arguments (e.g., geometry_method).
+"""
+function solve_MovingStokesUnsteadyMono!(s::MovingStokesUnsteadyMono{3},
+                                          body::Function,
+                                          mesh::AbstractMesh,
+                                          Δt::Float64, Tₛ::Float64, Tₑ::Float64,
+                                          bc_b_u::Tuple{BorderConditions, BorderConditions, BorderConditions},
+                                          bc_cut::Union{AbstractBoundary, NTuple{3, AbstractBoundary}};
+                                          scheme::Symbol=:BE,
+                                          method=Base.:\,
+                                          algorithm=nothing,
+                                          geometry_method::String="VOFI",
+                                          kwargs...)
+    println("Solving the problem:")
+    println("- Moving problem")
+    println("- Monophasic problem")
+    println("- Unsteady problem")
+    println("- Stokes problem (3D)")
+    
+    θ = scheme == :CN ? 0.5 : 1.0
+    
+    # Allow boundary conditions to be provided at solve-time
+    s.bc_u = bc_b_u
+    s.bc_cut = normalize_cut_bc(bc_cut, 3)
+    
+    # Create mesh_u tuple (staggered grids)
+    dx = mesh.nodes[1][2] - mesh.nodes[1][1]
+    dy = mesh.nodes[2][2] - mesh.nodes[2][1]
+    dz = mesh.nodes[3][2] - mesh.nodes[3][1]
+    mesh_ux = Penguin.Mesh((length(mesh.nodes[1])-1, length(mesh.nodes[2])-1, length(mesh.nodes[3])-1),
+                            (mesh.nodes[1][end] - mesh.nodes[1][1], mesh.nodes[2][end] - mesh.nodes[2][1], mesh.nodes[3][end] - mesh.nodes[3][1]),
+                            (mesh.nodes[1][1] - 0.5*dx, mesh.nodes[2][1], mesh.nodes[3][1]))
+    mesh_uy = Penguin.Mesh((length(mesh.nodes[1])-1, length(mesh.nodes[2])-1, length(mesh.nodes[3])-1),
+                            (mesh.nodes[1][end] - mesh.nodes[1][1], mesh.nodes[2][end] - mesh.nodes[2][1], mesh.nodes[3][end] - mesh.nodes[3][1]),
+                            (mesh.nodes[1][1], mesh.nodes[2][1] - 0.5*dy, mesh.nodes[3][1]))
+    mesh_uz = Penguin.Mesh((length(mesh.nodes[1])-1, length(mesh.nodes[2])-1, length(mesh.nodes[3])-1),
+                            (mesh.nodes[1][end] - mesh.nodes[1][1], mesh.nodes[2][end] - mesh.nodes[2][1], mesh.nodes[3][end] - mesh.nodes[3][1]),
+                            (mesh.nodes[1][1], mesh.nodes[2][1], mesh.nodes[3][1] - 0.5*dz))
+    
+    # Store times and initial state
+    t = Tₛ
+    push!(s.times, t)
+    push!(s.states, copy(s.x))
+    
+    println("Time : $(t)")
+    
+    # Time loop
+    while t < Tₑ - 1e-12 * max(1.0, Tₑ)
+        dt_step = min(Δt, Tₑ - t)
+        t_next = t + dt_step
+        
+        println("Time : $(t_next)")
+        
+        # Create SpaceTime meshes for this time interval
+        STmesh_ux = Penguin.SpaceTimeMesh(mesh_ux, [t, t_next], tag=mesh.tag)
+        STmesh_uy = Penguin.SpaceTimeMesh(mesh_uy, [t, t_next], tag=mesh.tag)
+        STmesh_uz = Penguin.SpaceTimeMesh(mesh_uz, [t, t_next], tag=mesh.tag)
+        STmesh_p = Penguin.SpaceTimeMesh(mesh, [t, t_next], tag=mesh.tag)
+        
+        # Build capacities with moving body
+        capacity_ux = Capacity(body, STmesh_ux; method=geometry_method, kwargs...)
+        capacity_uy = Capacity(body, STmesh_uy; method=geometry_method, kwargs...)
+        capacity_uz = Capacity(body, STmesh_uz; method=geometry_method, kwargs...)
+        capacity_p = Capacity(body, STmesh_p; method=geometry_method, kwargs...)
+        
+        # Build operators
+        operator_ux = DiffusionOps(capacity_ux)
+        operator_uy = DiffusionOps(capacity_uy)
+        operator_uz = DiffusionOps(capacity_uz)
+        operator_p = DiffusionOps(capacity_p)
+        
+        # Build blocks for this time step
+        data = stokes3D_moving_blocks(s.fluid,
+                                       (operator_ux, operator_uy, operator_uz),
+                                       (capacity_ux, capacity_uy, capacity_uz),
+                                       operator_p, capacity_p,
+                                       scheme)
+        
+        # Assemble system
+        x_prev = s.x
+        assemble_stokes3D_moving!(s, data, dt_step, x_prev, t, t_next, θ, mesh)
+        
+        # Solve system
+        solve_moving_stokes_linear_system!(s; method=method, algorithm=algorithm, kwargs...)
+        
+        # Store result
+        push!(s.times, t_next)
+        push!(s.states, copy(s.x))
+        println("Solver Extremum : ", maximum(abs.(s.x)))
+        
+        t = t_next
+    end
+    
     return s.times, s.states
 end
 
