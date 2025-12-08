@@ -3,6 +3,8 @@
 
 Prototype two-phase Stokes solver with per-phase fluids on staggered grids.
 Unknown ordering (2D): `[u₁xᵠ, u₁xᵞ, u₁yᵠ, u₁yᵞ, p₁, u₂xᵠ, u₂xᵞ, u₂yᵠ, u₂yᵞ, p₂]`
+Unknown ordering (3D) follows the same pattern, adding z components; 1D is the
+degenerate single-component variant.
 Rows enforce momentum, velocity continuity at the interface, traction continuity,
 and incompressibility for each phase.
 """
@@ -33,7 +35,7 @@ function StokesDiph(fluid_a::Fluid{N},
                     ic::NTuple{N,InterfaceConditions};
                     pressure_gauge::Union{AbstractPressureGauge,NTuple{2,AbstractPressureGauge}}=DEFAULT_PRESSURE_GAUGE,
                     x0=zeros(0)) where {N}
-    N == 2 || error("StokesDiph currently implemented for 2D (received N=$(N)).")
+    (1 <= N <= 3) || error("StokesDiph currently implemented for 1D/2D/3D (received N=$(N)).")
 
     gauge_tuple = pressure_gauge isa AbstractPressureGauge ? normalize_pressure_gauges(pressure_gauge) :
                   normalize_pressure_gauges(pressure_gauge)
