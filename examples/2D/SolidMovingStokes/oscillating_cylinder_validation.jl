@@ -2,6 +2,7 @@ using Penguin
 using CairoMakie
 using LinearAlgebra
 using IterativeSolvers
+using Statistics
 
 """
 Laminar flow past a transversely oscillating cylinder (prescribed motion).
@@ -80,7 +81,7 @@ pressure_gauge = PinPressureGauge()
 # Cut boundary: match rigid body velocity (u_x = 0, u_y = dy/dt)
 bc_cut = (
     Dirichlet((x,y,t) -> 0.0),
-    Dirichlet((x,y,t) -> -A_osc * ω_osc * sin(ω_osc * t))
+    Dirichlet((x,y,t) -> 0.0)
 )
 
 ###########
@@ -129,6 +130,58 @@ times, states = solve_MovingStokesUnsteadyMono!(solver, body, mesh_p,
                                                  compute_centroids=true)
 
 println("Completed $(length(times)-1) steps; final time = ", times[end])
+
+###########
+# Visualization
+###########
+function visualize_oscillating_circle(times, states, mesh_ux, 
+                                       body, nu_x, nu_y, np;
+                                       frames=[1, length(times)])
+    xs = mesh_ux.nodes[1]
+    ys = mesh_ux.nodes[2]
+    
+    fig = Figure(size=(800, 400))
+    
+    for (col, frame_idx) in enumerate(frames)
+        t = times[frame_idx]
+        state = states[frame_idx]
+        
+        uωx = state[1:nu_x]
+        uωy = state[2*nu_x+1:2*nu_x+nu_y]
+        
+        Ux = reshape(uωx, (length(xs), length(ys)))
+        Uy = reshape(uωy, (length(xs), length(ys)))
+        
+        speed = sqrt.(Ux.^2 .+ Uy.^2)
+        
+        ax = Axis(fig[1, col], 
+                  xlabel="x", ylabel="y", 
+                  title="t = $(round(t, digits=3))",
+                  aspect=DataAspect())
+        
+        hm = heatmap!(ax, xs, ys, speed; colormap=:viridis)
+        
+        # Draw interface
+        θ_circle = range(0, 2π, length=100)
+        cy = center_y0 + A_osc * sin(ω_osc * t + φ_osc)
+        circle_x = center_x .+ radius .* cos.(θ_circle)
+        circle_y = cy .+ radius .* sin.(θ_circle)
+        lines!(ax, circle_x, circle_y, color=:white, linewidth=2)
+        
+        if col == length(frames)
+            Colorbar(fig[1, col+1], hm, label="Velocity magnitude")
+        end
+    end
+    
+    save("oscillating_circle_stokes.png", fig)
+    println("Saved visualization to oscillating_circle_stokes.png")
+    return fig
+end
+
+# Visualize at start and end
+fig = visualize_oscillating_circle(times, states, mesh_ux,
+                                    body, nu_x, nu_y, np)
+display(fig)
 
 ###########
 # Utilities
@@ -203,7 +256,7 @@ xs = mesh_ux.nodes[1]; ys = mesh_ux.nodes[2]
 Xp = mesh_p.nodes[1];  Yp = mesh_p.nodes[2]
 
 Cd_hist = Float64[]; Cl_hist = Float64[]; cy_hist = Float64[]
-vorticity_final = nothing
+speed_final = zeros(length(xs), length(ys))
 
 for (idx, state) in enumerate(states)
     uωx = state[1:nu_x]
@@ -214,13 +267,6 @@ for (idx, state) in enumerate(states)
     Uy = reshape(uωy, (length(xs), length(ys)))
     P  = reshape(pω, (length(Xp), length(Yp)))
 
-    ωz = similar(P)
-    for j in 2:length(Yp)-1, i in 2:length(Xp)-1
-        dUy_dx = (Uy[i+1,j] - Uy[i-1,j]) / (xs[i+1]-xs[i-1])
-        dUx_dy = (Ux[i,j+1] - Ux[i,j-1]) / (ys[j+1]-ys[j-1])
-        ωz[i,j] = dUy_dx - dUx_dy
-    end
-
     Cd, Cl, _, _ = instantaneous_force(Ux, Uy, P, xs, ys, Xp, Yp, μ, ρ, U_in, diameter, times[idx];
                                        center_x=center_x, center_y0=center_y0, radius=radius, A_osc=A_osc, ω_osc=ω_osc)
     push!(Cd_hist, Cd); push!(Cl_hist, Cl)
@@ -228,7 +274,7 @@ for (idx, state) in enumerate(states)
     push!(cy_hist, cy)
 
     if idx == length(states)
-        vorticity_final = ωz
+        speed_final = sqrt.(Ux.^2 .+ Uy.^2)
     end
 end
 
@@ -243,17 +289,17 @@ println("Lift coefficient mean=$(Cl_mean), RMS=$(Cl_rms)")
 ###########
 # Plots
 ###########
-fig1 = Figure(resolution=(1200, 500))
-ax_vort = Axis(fig1[1,1], xlabel="x", ylabel="y", title="Vorticity at final time")
-hm_vort = heatmap!(ax_vort, Xp, Yp, vorticity_final; colormap=:balance)
+fig1 = Figure(size=(1200, 500))
+ax_vort = Axis(fig1[1,1], xlabel="x", ylabel="y", title="Speed magnitude at final time")
+hm_vort = heatmap!(ax_vort, xs, ys, speed_final; colormap=:plasma)
 θ = range(0, 2π, length=200)
 cyf = center_y0 + A_osc * cos(ω_osc * times[end])
 lines!(ax_vort, center_x .+ radius .* cos.(θ), cyf .+ radius .* sin.(θ), color=:white, linewidth=2)
-Colorbar(fig1[1,2], hm_vort, label="ω_z")
-save("oscillating_cylinder_vorticity.png", fig1)
-println("Saved vorticity contours to oscillating_cylinder_vorticity.png")
+Colorbar(fig1[1,2], hm_vort, label="|u|")
+save("oscillating_cylinder_speed.png", fig1)
+println("Saved speed contours to oscillating_cylinder_speed.png")
 
-fig2 = Figure(resolution=(1200, 500))
+fig2 = Figure(size=(1200, 500))
 ax_drag = Axis(fig2[1,1], xlabel="time", ylabel="C_d", title="Drag/Lift coefficients vs time")
 lines!(ax_drag, times, Cd_hist, label="C_d", color=:blue)
 lines!(ax_drag, times, Cl_hist, label="C_l", color=:red, linestyle=:dash)
