@@ -2,7 +2,7 @@ using Penguin
 using CairoMakie
 using LinearAlgebra
 using LinearSolve
-using WriteVTK
+using VTKOutputs
 
 """
 Steady Stokes flow past a spherical obstacle embedded in a 3D channel.
@@ -11,7 +11,7 @@ cut-cell capacity construction. The interface (cut) boundary is given a
 homogeneous Dirichlet velocity (no-slip) enforcing u^γ = 0.
 
 Domain: rectangular box of length Lx and square cross-section Ly×Lz.
-Inlet/Outlet: parabolic profile in x-component, zero for y,z.
+Inlet: uniform plug profile in x-component, zero for y,z. Outlet: outflow.
 Walls: no-slip.
 Sphere: centered, radius R.
 """
@@ -20,12 +20,12 @@ Sphere: centered, radius R.
 # Geometry
 ###########
 # Grid & domain (center sphere inside channel)
-Nx, Ny, Nz = 32, 32, 16
-Lx, Ly, Lz = 4.0, 1.0, 1.0
+Nx, Ny, Nz = 32, 32, 32
+Lx, Ly, Lz = 16.0, 16.0, 16.0
 x0, y0, z0 = -Lx/2, -Ly/2, -Lz/2   # domain centered at origin
 
 sphere_center = (0.0, 0.0, 0.0)
-R = 0.2
+R = 1.0
 ###########
 sphere_body = (x, y, z, _t=0.0) -> -(sqrt((x - sphere_center[1])^2 +
                              (y - sphere_center[2])^2 +
@@ -46,14 +46,13 @@ mesh_uz = Penguin.Mesh((Nx, Ny, Nz), (Lx, Ly, Lz), (x0, y0, z0 - 0.5*Δz))
 # Capacities & Operators
 ###########
 println("capacity ux...")
-cap_ux = Capacity(sphere_body, mesh_ux; method="ImplicitIntegration")
+cap_ux = Capacity(sphere_body, mesh_ux; method="VOFI", integration_method=:vofijul)
 println("capacity uy...")
-cap_uy = Capacity(sphere_body, mesh_uy; method="ImplicitIntegration")
+cap_uy = Capacity(sphere_body, mesh_uy; method="VOFI", integration_method=:vofijul)
 println("capacity uz...")
-cap_uz = Capacity(sphere_body, mesh_uz; method="ImplicitIntegration")
+cap_uz = Capacity(sphere_body, mesh_uz; method="VOFI", integration_method=:vofijul)
 println("capacity p...")
-cap_p  = Capacity(sphere_body, mesh_p; method="ImplicitIntegration")
-
+cap_p  = Capacity(sphere_body, mesh_p; method="VOFI", integration_method=:vofijul)
 op_ux = DiffusionOps(cap_ux)
 op_uy = DiffusionOps(cap_uy)
 op_uz = DiffusionOps(cap_uz)
@@ -63,20 +62,16 @@ op_p  = DiffusionOps(cap_p)
 # Boundary Conditions
 ###########
 Umax = 1.0
-# Parabolic profile in y,z at inlet/outlet for u_x; zero elsewhere
-parabolic = (x,y,z) -> begin
-    ξ = (y - (y0 + Ly/2)) / (Ly/2)
-    η = (z - (z0 + Lz/2)) / (Lz/2)
-    Umax * (1 - ξ^2) * (1 - η^2)
-end
+# Uniform plug profile in x-component at inlet; zero elsewhere
+uniform_plug = (x,y,z) -> Umax
 
 # For ux component
-ux_left   = Dirichlet((x,y,z) -> parabolic(x,y,z))
+ux_left   = Dirichlet((x,y,z) -> uniform_plug(x,y,z))
 ux_right  = Outflow()
-ux_bottom = Dirichlet(0.0)
-ux_top    = Dirichlet(0.0)
-ux_front  = Dirichlet(0.0)
-ux_back   = Dirichlet(0.0)
+ux_bottom = Dirichlet((x,y,z) -> uniform_plug(x,y,z))
+ux_top    = Dirichlet((x,y,z) -> uniform_plug(x,y,z))
+ux_front  = Dirichlet((x,y,z) -> uniform_plug(x,y,z))
+ux_back   = Dirichlet((x,y,z) -> uniform_plug(x,y,z))
 
 # For uy component (all walls no-slip, inlet/outlet zero cross-flow)
 uy_zero = Dirichlet(0.0)
@@ -184,34 +179,6 @@ save("stokes3d_sphere_slice.png", fig)
 println("Saved stokes3d_sphere_slice.png")
 
 ###########
-# Export to VTK for ParaView inspection
-###########
-Ux_cut = reshape(solver.x[off_uγx+1:off_uγx+nu_x], size(Ux))
-Uy_cut = reshape(solver.x[off_uγy+1:off_uγy+nu_y], size(Uy))
-Uz_cut = reshape(solver.x[off_uγz+1:off_uγz+nu_z], size(Uz))
-
-vtk_grid("stokes3d_velocity_x", mesh_ux.nodes[1], mesh_ux.nodes[2], mesh_ux.nodes[3]) do vtk
-    vtk["uωx"] = Ux
-    vtk["uγx"] = Ux_cut
-end
-
-vtk_grid("stokes3d_velocity_y", mesh_uy.nodes[1], mesh_uy.nodes[2], mesh_uy.nodes[3]) do vtk
-    vtk["uωy"] = Uy
-    vtk["uγy"] = Uy_cut
-end
-
-vtk_grid("stokes3d_velocity_z", mesh_uz.nodes[1], mesh_uz.nodes[2], mesh_uz.nodes[3]) do vtk
-    vtk["uωz"] = Uz
-    vtk["uγz"] = Uz_cut
-end
-
-vtk_grid("stokes3d_pressure", mesh_p.nodes[1], mesh_p.nodes[2], mesh_p.nodes[3]) do vtk
-    vtk["pressure"] = P
-end
-
-println("VTK files written: stokes3d_velocity_x/yz.vtr and stokes3d_pressure.vtr (open in ParaView).")
-
-###########
 # Analytical Solution Comparison
 ###########
 """
@@ -223,9 +190,9 @@ For a sphere of radius 'a' in uniform flow U in the x-direction:
 where (r, θ, φ) are spherical coordinates with θ measured from x-axis.
 
 Note: The analytical solution assumes an unbounded domain with uniform flow at infinity.
-The current numerical simulation uses a bounded channel with parabolic inlet profile.
-For better agreement with analytical solution, consider extending the domain to
-~16 times the sphere diameter (Lx ~ 6.4 for R=0.2) and using more uniform inlet conditions.
+The current numerical simulation uses a bounded channel with a uniform plug inflow.
+For closer agreement with the unbounded analytical solution, consider extending the domain to
+~16 times the sphere diameter (Lx ~ 6.4 for R=0.2) and expanding the cross-section to reduce wall effects.
 """
 function analytical_stokes_sphere(x, y, z, U, a, center=(0.0, 0.0, 0.0))
     # Translate to sphere center
@@ -269,15 +236,45 @@ function analytical_stokes_sphere(x, y, z, U, a, center=(0.0, 0.0, 0.0))
     return (vx, vy, vz)
 end
 
-# Use the maximum velocity as U_infinity approximation
-# For better comparison, we use a representative flow speed
-# Note: For a parabolic profile u(ξ,η) = Umax(1-ξ²)(1-η²), 
-# the average velocity is Umax * (4/9) ≈ 0.44*Umax
-# We use 0.5*Umax as a simple approximation
-U_inf = Umax * 0.5  # Approximate average velocity
+# Use the inlet plug velocity as U_infinity for the analytical comparison
+U_inf = Umax
 
 # Small constant for numerical stability in relative error calculations
 EPS = 1e-10
+
+# Simple trilinear interpolation on structured grids (clamped at boundaries)
+function trilinear_interp(nodes, field, x, y, z)
+    xs, ys, zs = nodes
+    nx, ny, nz = length(xs), length(ys), length(zs)
+
+    ix = clamp(searchsortedlast(xs, x), 1, nx-1)
+    iy = clamp(searchsortedlast(ys, y), 1, ny-1)
+    iz = clamp(searchsortedlast(zs, z), 1, nz-1)
+
+    x1, x2 = xs[ix], xs[ix+1]; y1, y2 = ys[iy], ys[iy+1]; z1, z2 = zs[iz], zs[iz+1]
+    tx = (x2 == x1) ? 0.0 : (x - x1) / (x2 - x1)
+    ty = (y2 == y1) ? 0.0 : (y - y1) / (y2 - y1)
+    tz = (z2 == z1) ? 0.0 : (z - z1) / (z2 - z1)
+
+    c000 = field[ix,   iy,   iz  ]
+    c100 = field[ix+1, iy,   iz  ]
+    c010 = field[ix,   iy+1, iz  ]
+    c110 = field[ix+1, iy+1, iz  ]
+    c001 = field[ix,   iy,   iz+1]
+    c101 = field[ix+1, iy,   iz+1]
+    c011 = field[ix,   iy+1, iz+1]
+    c111 = field[ix+1, iy+1, iz+1]
+
+    c00 = c000*(1-tx) + c100*tx
+    c10 = c010*(1-tx) + c110*tx
+    c01 = c001*(1-tx) + c101*tx
+    c11 = c011*(1-tx) + c111*tx
+
+    c0 = c00*(1-ty) + c10*ty
+    c1 = c01*(1-ty) + c11*ty
+
+    return c0*(1-tz) + c1*tz
+end
 
 println("\n" * "="^60)
 println("Analytical Stokes Solution Comparison")
@@ -304,25 +301,11 @@ u_ana_z = zeros(n_samples)
 
 for i in 1:n_samples
     xi, yi, zi = x_sample[i], y_sample[i], z_sample[i]
-    
-    # Find nearest grid points for velocity components
-    # For ux (on mesh_ux)
-    ix = argmin(abs.(mesh_ux.nodes[1] .- xi))
-    iy = argmin(abs.(mesh_ux.nodes[2] .- yi))
-    iz = argmin(abs.(mesh_ux.nodes[3] .- zi))
-    u_num_x[i] = Ux[ix, iy, iz]
-    
-    # For uy (on mesh_uy)
-    ix = argmin(abs.(mesh_uy.nodes[1] .- xi))
-    iy = argmin(abs.(mesh_uy.nodes[2] .- yi))
-    iz = argmin(abs.(mesh_uy.nodes[3] .- zi))
-    u_num_y[i] = Uy[ix, iy, iz]
-    
-    # For uz (on mesh_uz)
-    ix = argmin(abs.(mesh_uz.nodes[1] .- xi))
-    iy = argmin(abs.(mesh_uz.nodes[2] .- yi))
-    iz = argmin(abs.(mesh_uz.nodes[3] .- zi))
-    u_num_z[i] = Uz[ix, iy, iz]
+
+    # Trilinear interpolation on staggered grids
+    u_num_x[i] = trilinear_interp(mesh_ux.nodes, Ux, xi, yi, zi)
+    u_num_y[i] = trilinear_interp(mesh_uy.nodes, Uy, xi, yi, zi)
+    u_num_z[i] = trilinear_interp(mesh_uz.nodes, Uz, xi, yi, zi)
     
     # Analytical solution
     vx, vy, vz = analytical_stokes_sphere(xi, yi, zi, U_inf, R, sphere_center)
@@ -404,21 +387,10 @@ for i in 1:n_radial
     yi = sphere_center[2] + r * sin(theta_rad)
     zi = sphere_center[3]
     
-    # Numerical solution
-    ix = argmin(abs.(mesh_ux.nodes[1] .- xi))
-    iy = argmin(abs.(mesh_ux.nodes[2] .- yi))
-    iz = argmin(abs.(mesh_ux.nodes[3] .- zi))
-    u_rad_num_x[i] = Ux[ix, iy, iz]
-    
-    ix = argmin(abs.(mesh_uy.nodes[1] .- xi))
-    iy = argmin(abs.(mesh_uy.nodes[2] .- yi))
-    iz = argmin(abs.(mesh_uy.nodes[3] .- zi))
-    u_rad_num_y[i] = Uy[ix, iy, iz]
-    
-    ix = argmin(abs.(mesh_uz.nodes[1] .- xi))
-    iy = argmin(abs.(mesh_uz.nodes[2] .- yi))
-    iz = argmin(abs.(mesh_uz.nodes[3] .- zi))
-    u_rad_num_z[i] = Uz[ix, iy, iz]
+    # Numerical solution (interpolated)
+    u_rad_num_x[i] = trilinear_interp(mesh_ux.nodes, Ux, xi, yi, zi)
+    u_rad_num_y[i] = trilinear_interp(mesh_uy.nodes, Uy, xi, yi, zi)
+    u_rad_num_z[i] = trilinear_interp(mesh_uz.nodes, Uz, xi, yi, zi)
     
     # Analytical solution
     vx, vy, vz = analytical_stokes_sphere(xi, yi, zi, U_inf, R, sphere_center)
