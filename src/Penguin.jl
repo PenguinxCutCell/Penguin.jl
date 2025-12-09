@@ -135,6 +135,9 @@ export StokesMono, solve_StokesMono!, solve_StokesMono_unsteady!
 include("prescribedmotionsolver/stokes.jl")
 export MovingStokesUnsteadyMono, solve_MovingStokesUnsteadyMono!
 
+include("prescribedmotionsolver/stokes_fsi.jl")
+export MovingStokesFSI2D, solve_MovingStokesFSI2D!
+
 include("solver/stokes_diph.jl")
 export StokesDiph, solve_StokesDiph!, solve_StokesDiph_unsteady!
 
