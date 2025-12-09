@@ -221,6 +221,11 @@ For a sphere of radius 'a' in uniform flow U in the x-direction:
   vθ = U(−1 + 3a/(4r) + a³/(4r³))sinθ
   vφ = 0
 where (r, θ, φ) are spherical coordinates with θ measured from x-axis.
+
+Note: The analytical solution assumes an unbounded domain with uniform flow at infinity.
+The current numerical simulation uses a bounded channel with parabolic inlet profile.
+For better agreement with analytical solution, consider extending the domain to
+~16 times the sphere diameter (Lx ~ 6.4 for R=0.2) and using more uniform inlet conditions.
 """
 function analytical_stokes_sphere(x, y, z, U, a, center=(0.0, 0.0, 0.0))
     # Translate to sphere center
@@ -371,4 +376,54 @@ ax4.ylabel = "Relative error (%)"
 
 save("stokes3d_sphere_comparison.png", fig2)
 println("\nSaved comparison plot: stokes3d_sphere_comparison.png")
+
+# Additional comparison: radial profile at 45 degrees
+println("\nAdditional radial comparison at θ=45° (in x-y plane):")
+n_radial = 15
+r_values = range(1.5*R, stop=minimum([Lx/2, Ly/2])*0.9, length=n_radial)
+theta_deg = 45.0
+theta_rad = theta_deg * π / 180.0
+
+u_rad_num_x = zeros(n_radial)
+u_rad_num_y = zeros(n_radial)
+u_rad_num_z = zeros(n_radial)
+u_rad_ana_x = zeros(n_radial)
+u_rad_ana_y = zeros(n_radial)
+u_rad_ana_z = zeros(n_radial)
+
+for i in 1:n_radial
+    r = r_values[i]
+    xi = sphere_center[1] + r * cos(theta_rad)
+    yi = sphere_center[2] + r * sin(theta_rad)
+    zi = sphere_center[3]
+    
+    # Numerical solution
+    ix = argmin(abs.(mesh_ux.nodes[1] .- xi))
+    iy = argmin(abs.(mesh_ux.nodes[2] .- yi))
+    iz = argmin(abs.(mesh_ux.nodes[3] .- zi))
+    u_rad_num_x[i] = Ux[ix, iy, iz]
+    
+    ix = argmin(abs.(mesh_uy.nodes[1] .- xi))
+    iy = argmin(abs.(mesh_uy.nodes[2] .- yi))
+    iz = argmin(abs.(mesh_uy.nodes[3] .- zi))
+    u_rad_num_y[i] = Uy[ix, iy, iz]
+    
+    ix = argmin(abs.(mesh_uz.nodes[1] .- xi))
+    iy = argmin(abs.(mesh_uz.nodes[2] .- yi))
+    iz = argmin(abs.(mesh_uz.nodes[3] .- zi))
+    u_rad_num_z[i] = Uz[ix, iy, iz]
+    
+    # Analytical solution
+    vx, vy, vz = analytical_stokes_sphere(xi, yi, zi, U_inf, R, sphere_center)
+    u_rad_ana_x[i] = vx
+    u_rad_ana_y[i] = vy
+    u_rad_ana_z[i] = vz
+end
+
+rad_error = sqrt.((u_rad_num_x .- u_rad_ana_x).^2 .+ 
+                  (u_rad_num_y .- u_rad_ana_y).^2 .+ 
+                  (u_rad_num_z .- u_rad_ana_z).^2)
+println("  Mean error along radial: ", sum(rad_error) / n_radial)
+println("  Max error along radial: ", maximum(rad_error))
+
 println("="^60)
