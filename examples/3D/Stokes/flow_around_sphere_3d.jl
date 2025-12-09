@@ -210,3 +210,165 @@ vtk_grid("stokes3d_pressure", mesh_p.nodes[1], mesh_p.nodes[2], mesh_p.nodes[3])
 end
 
 println("VTK files written: stokes3d_velocity_x/yz.vtr and stokes3d_pressure.vtr (open in ParaView).")
+
+###########
+# Analytical Solution Comparison
+###########
+"""
+Analytical Stokes flow solution around a sphere in uniform flow.
+For a sphere of radius 'a' in uniform flow U in the x-direction:
+  vr = U(1 − 3a/(2r) + a³/(2r³))cosθ
+  vθ = U(−1 + 3a/(4r) + a³/(4r³))sinθ
+  vφ = 0
+where (r, θ, φ) are spherical coordinates with θ measured from x-axis.
+"""
+function analytical_stokes_sphere(x, y, z, U, a, center=(0.0, 0.0, 0.0))
+    # Translate to sphere center
+    dx = x - center[1]
+    dy = y - center[2]
+    dz = z - center[3]
+    
+    # Convert to spherical coordinates (with x as polar axis)
+    r = sqrt(dx^2 + dy^2 + dz^2)
+    
+    # Avoid singularity at sphere center
+    if r < a * 1.01  # Inside or very close to sphere surface
+        return (0.0, 0.0, 0.0)  # No-slip boundary condition
+    end
+    
+    # θ is angle from x-axis (polar angle)
+    cos_theta = dx / r
+    sin_theta = sqrt(dy^2 + dz^2) / r
+    
+    # Radial and tangential velocities in spherical coordinates
+    vr = U * (1.0 - 3.0*a/(2.0*r) + a^3/(2.0*r^3)) * cos_theta
+    vtheta = -U * (1.0 - 3.0*a/(4.0*r) - a^3/(4.0*r^3)) * sin_theta
+    
+    # Convert back to Cartesian coordinates
+    # Unit vectors: e_r = (dx, dy, dz)/r
+    #               e_theta in x-y plane perpendicular to e_r
+    if sin_theta > 1e-10
+        # e_theta points in direction of decreasing θ
+        # In Cartesian: e_theta = (-sin_theta, cos_theta*dy/sqrt(dy^2+dz^2), cos_theta*dz/sqrt(dy^2+dz^2))
+        rho = sqrt(dy^2 + dz^2)
+        vx = vr * cos_theta - vtheta * sin_theta
+        vy = vr * dy/r + vtheta * cos_theta * dy/rho
+        vz = vr * dz/r + vtheta * cos_theta * dz/rho
+    else
+        # On x-axis, theta = 0 or π
+        vx = vr * cos_theta
+        vy = 0.0
+        vz = 0.0
+    end
+    
+    return (vx, vy, vz)
+end
+
+# Use the maximum velocity as U_infinity approximation
+# For better comparison, we use a representative flow speed
+U_inf = Umax * 0.5  # Approximate average velocity
+
+println("\n" * "="^60)
+println("Analytical Stokes Solution Comparison")
+println("="^60)
+println("Sphere radius: a = ", R)
+println("Reference velocity: U = ", U_inf)
+println("Sphere center: ", sphere_center)
+
+# Sample points for comparison along centerline (y=0, z=0)
+n_samples = 20
+x_sample = range(sphere_center[1] + 1.5*R, stop=x0+Lx-0.5, length=n_samples)
+y_sample = zeros(n_samples)
+z_sample = zeros(n_samples)
+
+# Interpolate numerical solution at sample points
+# We need to find grid indices and interpolate
+u_num_x = zeros(n_samples)
+u_num_y = zeros(n_samples)
+u_num_z = zeros(n_samples)
+u_ana_x = zeros(n_samples)
+u_ana_y = zeros(n_samples)
+u_ana_z = zeros(n_samples)
+
+for i in 1:n_samples
+    xi, yi, zi = x_sample[i], y_sample[i], z_sample[i]
+    
+    # Find nearest grid points for velocity components
+    # For ux (on mesh_ux)
+    ix = argmin(abs.(mesh_ux.nodes[1] .- xi))
+    iy = argmin(abs.(mesh_ux.nodes[2] .- yi))
+    iz = argmin(abs.(mesh_ux.nodes[3] .- zi))
+    u_num_x[i] = Ux[ix, iy, iz]
+    
+    # For uy (on mesh_uy)
+    ix = argmin(abs.(mesh_uy.nodes[1] .- xi))
+    iy = argmin(abs.(mesh_uy.nodes[2] .- yi))
+    iz = argmin(abs.(mesh_uy.nodes[3] .- zi))
+    u_num_y[i] = Uy[ix, iy, iz]
+    
+    # For uz (on mesh_uz)
+    ix = argmin(abs.(mesh_uz.nodes[1] .- xi))
+    iy = argmin(abs.(mesh_uz.nodes[2] .- yi))
+    iz = argmin(abs.(mesh_uz.nodes[3] .- zi))
+    u_num_z[i] = Uz[ix, iy, iz]
+    
+    # Analytical solution
+    vx, vy, vz = analytical_stokes_sphere(xi, yi, zi, U_inf, R, sphere_center)
+    u_ana_x[i] = vx
+    u_ana_y[i] = vy
+    u_ana_z[i] = vz
+end
+
+# Compute errors
+error_x = u_num_x .- u_ana_x
+error_y = u_num_y .- u_ana_y
+error_z = u_num_z .- u_ana_z
+error_magnitude = sqrt.(error_x.^2 .+ error_y.^2 .+ error_z.^2)
+
+# Compute error metrics
+l2_error = sqrt(sum(error_magnitude.^2) / n_samples)
+max_error = maximum(error_magnitude)
+mean_error = sum(error_magnitude) / n_samples
+
+println("\nError Metrics (centerline samples):")
+println("  L2 error:   ", l2_error)
+println("  Max error:  ", max_error)
+println("  Mean error: ", mean_error)
+
+# Relative errors
+u_ana_magnitude = sqrt.(u_ana_x.^2 .+ u_ana_y.^2 .+ u_ana_z.^2)
+relative_error = error_magnitude ./ (u_ana_magnitude .+ 1e-10)
+mean_relative_error = sum(relative_error) / n_samples
+
+println("  Mean relative error: ", mean_relative_error * 100, "%")
+
+# Visualization: comparison plot
+fig2 = Figure(resolution=(1200, 800))
+
+# Plot velocity components along centerline
+ax1 = Axis(fig2[1,1], title="Velocity vx along centerline (y=0, z=0)", 
+           xlabel="x", ylabel="vx")
+lines!(ax1, x_sample, u_num_x, label="Numerical", linewidth=2)
+lines!(ax1, x_sample, u_ana_x, label="Analytical", linewidth=2, linestyle=:dash)
+axislegend(ax1, position=:rb)
+
+ax2 = Axis(fig2[1,2], title="Velocity magnitude along centerline", 
+           xlabel="x", ylabel="|v|")
+u_num_mag = sqrt.(u_num_x.^2 .+ u_num_y.^2 .+ u_num_z.^2)
+u_ana_mag = sqrt.(u_ana_x.^2 .+ u_ana_y.^2 .+ u_ana_z.^2)
+lines!(ax2, x_sample, u_num_mag, label="Numerical", linewidth=2)
+lines!(ax2, x_sample, u_ana_mag, label="Analytical", linewidth=2, linestyle=:dash)
+axislegend(ax2, position=:rb)
+
+ax3 = Axis(fig2[2,1], title="Error in velocity magnitude", 
+           xlabel="x", ylabel="Error |v|")
+lines!(ax3, x_sample, error_magnitude, linewidth=2, color=:red)
+
+ax4 = Axis(fig2[2,2], title="Relative error", 
+           xlabel="x", ylabel="Relative error")
+lines!(ax4, x_sample, relative_error .* 100, linewidth=2, color=:red)
+ax4.ylabel = "Relative error (%)"
+
+save("stokes3d_sphere_comparison.png", fig2)
+println("\nSaved comparison plot: stokes3d_sphere_comparison.png")
+println("="^60)
