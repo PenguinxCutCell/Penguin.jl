@@ -3,19 +3,19 @@ using CairoMakie
 using StaticArrays
 using IterativeSolvers
 
-# Rigid particle convected by a uniform Stokes flow (explicit FSI coupling).
-# The particle is a translating circle; the fluid drag accelerates it until the
-# relative slip decreases.
+# Rigid circle falling under gravity in a quiescent Stokes fluid (explicit FSI).
+# The body accelerates downward due to gravity and reacts with the surrounding
+# fluid through hydrodynamic forces.
 
 ############
 # Geometry and body definition
 ############
-nx, ny = 96, 48
-Lx, Ly = 8.0, 2.0
+nx, ny = 40, 80
+Lx, Ly = 2.0, 6.0
 x0, y0 = -Lx / 2, -Ly / 2
 
-radius = 0.25
-center0 = SVector(-2.0, 0.0)
+radius = 0.2
+center0 = SVector(0.0, 2.0)
 velocity0 = SVector(0.0, 0.0)
 body_shape = (x, y, c) -> radius - sqrt((x - c[1])^2 + (y - c[2])^2)
 
@@ -29,7 +29,7 @@ mesh_ux = Penguin.Mesh((nx, ny), (Lx, Ly), (x0 - 0.5 * dx, y0))
 mesh_uy = Penguin.Mesh((nx, ny), (Lx, Ly), (x0, y0 - 0.5 * dy))
 
 ############
-# Capacities/operators at t=0 (particle at center0)
+# Capacities/operators at t=0 (body at center0)
 ############
 capacity_ux = Capacity((x, y, _=0.0) -> body_shape(x, y, center0), mesh_ux)
 capacity_uy = Capacity((x, y, _=0.0) -> body_shape(x, y, center0), mesh_uy)
@@ -40,20 +40,14 @@ operator_uy = DiffusionOps(capacity_uy)
 operator_p = DiffusionOps(capacity_p)
 
 ############
-# Boundary conditions: uniform inflow, outflow at right, no-slip walls
+# Boundary conditions: no-slip walls (closed box)
 ############
-Umax = 1.0
-parabola = (x, y) -> 4Umax * (y - y0) * (Ly - (y - y0)) / (Ly^2)
-ux_left = Dirichlet((x, y, _) -> parabola(x, y))
-ux_right = Outflow()
-ux_bottom = Dirichlet(0.0)
-ux_top = Dirichlet(0.0)
-
+ux_zero = Dirichlet(0.0)
 uy_zero = Dirichlet(0.0)
 
 bc_ux = BorderConditions(Dict(
-    :left => ux_left, :right => ux_right,
-    :bottom => ux_bottom, :top => ux_top
+    :left => ux_zero, :right => ux_zero,
+    :bottom => ux_zero, :top => ux_zero
 ))
 bc_uy = BorderConditions(Dict(
     :left => uy_zero, :right => uy_zero,
@@ -62,7 +56,7 @@ bc_uy = BorderConditions(Dict(
 
 pressure_gauge = PinPressureGauge()
 
-# Cut boundary placeholder (overwritten each step inside FSI loop)
+# Cut boundary placeholder (overwritten each step in the FSI loop)
 bc_cut_init = (Dirichlet(0.0), Dirichlet(0.0))
 
 ############
@@ -70,6 +64,7 @@ bc_cut_init = (Dirichlet(0.0), Dirichlet(0.0))
 ############
 mu = 1.0
 rho = 1.0
+gravity = 1.0
 f_u = (x, y, z=0.0, t=0.0) -> 0.0
 f_p = (x, y, z=0.0, t=0.0) -> 0.0
 
@@ -92,17 +87,19 @@ x0_vec = zeros(Ntot)
 
 scheme = :BE
 dt = 0.01
-T_end = 0.5
+T_end = 1.0
 
 stokes_solver = MovingStokesUnsteadyMono(fluid, (bc_ux, bc_uy), pressure_gauge, bc_cut_init;
                                          scheme=scheme, x0=x0_vec)
 
 # Rigid-body properties
-mass = 2.0
+mass = 0.5
+area = π * radius^2
+gravity_force = (t,c,v) -> SVector(0.0, -(mass - rho*area) * gravity)
 fsi = MovingStokesFSI2D(stokes_solver, body_shape, mass, center0, velocity0)
 
-println("Running particle-in-uniform-flow case:")
-println("  U_in=$(U_in), radius=$(radius), mass=$(mass), dt=$(dt), T_end=$(T_end)")
+println("Running falling-circle FSI case:")
+println("  radius=$(radius), mass=$(mass), dt=$(dt), T_end=$(T_end)")
 
 times, states, centers, velocities, forces = solve_MovingStokesFSI2D!(fsi, mesh_p,
                                                                       dt, 0.0, T_end,
@@ -111,39 +108,40 @@ times, states, centers, velocities, forces = solve_MovingStokesFSI2D!(fsi, mesh_
                                                                       method=IterativeSolvers.gmres,
                                                                       geometry_method="VOFI",
                                                                       integration_method=:vofijul,
-                                                                      compute_centroids=true)
+                                                                      compute_centroids=true,
+                                                                      external_force=gravity_force)
 
 println("Completed $(length(times) - 1) steps; final center = ", centers[end], ", velocity = ", velocities[end])
 
 ############
 # Visualization
 ############
-function visualize_particle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x, nu_y;
-                            frame=length(times))
+function visualize_falling_circle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x, nu_y;
+                                  frame=length(times))
     t = times[frame]
     state = states[frame]
 
-    uwx = state[1:nu_x]
-    uwy = state[2nu_x + 1:2nu_x + nu_y]
+    uomx = state[1:nu_x]
+    uomy = state[2nu_x + 1:2nu_x + nu_y]
 
     xs_ux, ys_ux = mesh_ux.nodes
     xs_uy, ys_uy = mesh_uy.nodes
-    Ux = reshape(uwx, (length(xs_ux), length(ys_ux)))
-    Uy = reshape(uwy, (length(xs_uy), length(ys_uy)))
+    Ux = reshape(uomx, (length(xs_ux), length(ys_ux)))
+    Uy = reshape(uomy, (length(xs_uy), length(ys_uy)))
     speed = sqrt.(Ux.^2 .+ Uy.^2)
 
     cx = [c[1] for c in centers]
     cy = [c[2] for c in centers]
 
-    fig = Figure(size=(900, 400))
+    fig = Figure(size=(900, 450))
 
     ax = Axis(fig[1, 1], xlabel="x", ylabel="y", title="t = $(round(t, digits=3))",
               aspect=DataAspect())
     hm = heatmap!(ax, xs_ux, ys_ux, speed; colormap=:viridis)
     lines!(ax, cx, cy, color=:white, linewidth=2, label="trajectory")
-    scatter!(ax, [cx[end]], [cy[end]], color=:red, markersize=10, label="particle")
+    scatter!(ax, [cx[end]], [cy[end]], color=:red, markersize=10, label="circle")
 
-    theta = range(0, 2pi, length=100)
+    theta = range(0, 2pi, length=120)
     circle_x = cx[end] .+ radius .* cos.(theta)
     circle_y = cy[end] .+ radius .* sin.(theta)
     lines!(ax, circle_x, circle_y, color=:white, linewidth=2)
@@ -151,28 +149,26 @@ function visualize_particle(times, states, centers, mesh_ux, mesh_uy, radius, nu
     axislegend(ax; position=:lt)
     Colorbar(fig[1, 2], hm, label="|u|")
 
-    ax2 = Axis(fig[2, 1], xlabel="time", ylabel="center x", title="Particle drift")
-    lines!(ax2, times, cx, color=:black)
+    ax2 = Axis(fig[2, 1], xlabel="time", ylabel="center y", title="Vertical position")
+    lines!(ax2, times, cy, color=:black)
     return fig
 end
 
-fig = visualize_particle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x, nu_y)
-save("particle_uniform_flow.png", fig)
-println("Saved visualization to particle_uniform_flow.png")
+fig = visualize_falling_circle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x, nu_y)
+save("falling_circle_snapshot.png", fig)
+println("Saved visualization to falling_circle_snapshot.png")
 
 ############
 # Animation
 ############
-function animate_particle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x, nu_y;
-                          n_frames::Int=80, framerate::Int=10, outfile::String="particle_uniform_flow.gif")
+function animate_falling_circle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x, nu_y;
+                                n_frames::Int=80, framerate::Int=10, outfile::String="falling_circle.gif")
     xs_ux, ys_ux = mesh_ux.nodes
     xs_uy, ys_uy = mesh_uy.nodes
 
-    # Subsample frames to keep file size reasonable
     n_frames = min(n_frames, length(states))
     frame_indices = round.(Int, range(1, length(states), length=n_frames))
 
-    # Helper: reshape state -> speed field
     state_to_speed = function (state)
         uomx = state[1:nu_x]
         uomy = state[2nu_x + 1:2nu_x + nu_y]
@@ -181,7 +177,6 @@ function animate_particle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x
         return sqrt.(Ux.^2 .+ Uy.^2)
     end
 
-    # Fix colorbar across frames
     extrema_pairs = map(states) do st
         s = state_to_speed(st)
         return (minimum(s), maximum(s))
@@ -189,7 +184,6 @@ function animate_particle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x
     global_min = minimum(first, extrema_pairs)
     global_max = maximum(last, extrema_pairs)
 
-    # Observables for animation
     speed_obs = Observable(state_to_speed(states[frame_indices[1]]))
     title_obs = Observable("Velocity magnitude at t = $(round(times[frame_indices[1]]; digits=3))")
 
@@ -226,4 +220,23 @@ function animate_particle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x
     return outfile
 end
 
-animate_particle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x, nu_y)
+animate_falling_circle(times, states, centers, mesh_ux, mesh_uy, radius, nu_x, nu_y)
+
+############
+# Velocity history plot
+############
+function plot_velocity_history(times, velocities; outfile::String="falling_circle_velocity.png")
+    vx = [v[1] for v in velocities]
+    vy = [v[2] for v in velocities]
+
+    fig = Figure(size=(700, 400))
+    ax = Axis(fig[1, 1], xlabel="time", ylabel="velocity", title="Rigid-body velocity")
+    lines!(ax, times, vx, color=:blue, label="u_x")
+    lines!(ax, times, vy, color=:red, label="u_y")
+    axislegend(ax; position=:rt)
+    save(outfile, fig)
+    println("Saved velocity history to $(outfile)")
+    return fig
+end
+
+plot_velocity_history(times, velocities)
