@@ -271,7 +271,13 @@ end
 
 # Use the maximum velocity as U_infinity approximation
 # For better comparison, we use a representative flow speed
+# Note: For a parabolic profile u(ξ,η) = Umax(1-ξ²)(1-η²), 
+# the average velocity is Umax * (4/9) ≈ 0.44*Umax
+# We use 0.5*Umax as a simple approximation
 U_inf = Umax * 0.5  # Approximate average velocity
+
+# Small constant for numerical stability in relative error calculations
+EPS = 1e-10
 
 println("\n" * "="^60)
 println("Analytical Stokes Solution Comparison")
@@ -287,7 +293,8 @@ y_sample = zeros(n_samples)
 z_sample = zeros(n_samples)
 
 # Interpolate numerical solution at sample points
-# We need to find grid indices and interpolate
+# Note: Using nearest-neighbor sampling for simplicity. For more accurate
+# comparisons, consider implementing proper interpolation (linear/cubic).
 u_num_x = zeros(n_samples)
 u_num_y = zeros(n_samples)
 u_num_z = zeros(n_samples)
@@ -342,7 +349,7 @@ println("  Mean error: ", mean_error)
 
 # Relative errors
 u_ana_magnitude = sqrt.(u_ana_x.^2 .+ u_ana_y.^2 .+ u_ana_z.^2)
-relative_error = error_magnitude ./ (u_ana_magnitude .+ 1e-10)
+relative_error = error_magnitude ./ (u_ana_magnitude .+ EPS)
 mean_relative_error = sum(relative_error) / n_samples
 
 println("  Mean relative error: ", mean_relative_error * 100, "%")
