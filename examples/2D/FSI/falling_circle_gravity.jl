@@ -87,15 +87,15 @@ x0_vec = zeros(Ntot)
 
 scheme = :BE
 dt = 0.01
-T_end = 1.0
+T_end = 2.0
 
 stokes_solver = MovingStokesUnsteadyMono(fluid, (bc_ux, bc_uy), pressure_gauge, bc_cut_init;
                                          scheme=scheme, x0=x0_vec)
 
 # Rigid-body properties
-mass = 0.5
+mass = 1.0
 area = π * radius^2
-gravity_force = (t,c,v) -> SVector(0.0, -(mass - rho*area) * gravity)
+gravity_force = (t,c,v) -> SVector(0.0, -(mass) * gravity)
 fsi = MovingStokesFSI2D(stokes_solver, body_shape, mass, center0, velocity0)
 
 println("Running falling-circle FSI case:")
