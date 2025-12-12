@@ -116,7 +116,8 @@ function stokes1D_blocks(s::StokesMono)
 
     return (; nu, np, op_u, op_p, cap_u, cap_p,
             visc_uω, visc_uγ, grad, div_uω, div_uγ,
-            tie = I(nu), mass, V = op_u.V)
+            tie = I(nu), mass, V = op_u.V,
+            nu_components = (nu,))
 end
 
 function stokes2D_blocks(s::StokesMono)
@@ -174,7 +175,8 @@ function stokes2D_blocks(s::StokesMono)
             div_x_ω, div_x_γ, div_y_ω, div_y_γ,
             tie_x = I(nu_x), tie_y = I(nu_y),
             mass_x, mass_y,
-            Vx = ops_u[1].V, Vy = ops_u[2].V)
+            Vx = ops_u[1].V, Vy = ops_u[2].V,
+            nu_components = (nu_x, nu_y))
 end
 
 function stokes3D_blocks(s::StokesMono)
@@ -249,7 +251,8 @@ function stokes3D_blocks(s::StokesMono)
             div_x_ω, div_x_γ, div_y_ω, div_y_γ, div_z_ω, div_z_γ,
             tie_x = I(nu_x), tie_y = I(nu_y), tie_z = I(nu_z),
             mass_x, mass_y, mass_z,
-            Vx = ops_u[1].V, Vy = ops_u[2].V, Vz = ops_u[3].V)
+            Vx = ops_u[1].V, Vy = ops_u[2].V, Vz = ops_u[3].V,
+            nu_components = (nu_x, nu_y, nu_z))
 end
 
 
@@ -1572,6 +1575,96 @@ function solve_StokesMono!(s::StokesMono; method=Base.:\, algorithm=nothing, kwa
     assemble_stokes!(s)
     solve_stokes_linear_system!(s; method=method, algorithm=algorithm, kwargs...)
     return s
+end
+
+function compute_navierstokes_force_diagnostics(s::StokesMono)
+    N = length(s.fluid.operator_u)
+    data = N == 1 ? stokes1D_blocks(s) :
+           N == 2 ? stokes2D_blocks(s) :
+           N == 3 ? stokes3D_blocks(s) :
+           error("Force diagnostics currently implemented for 1D, 2D or 3D Stokes (got N=$(N)).")
+
+    nu_components = data.nu_components
+    total_velocity_dofs = 2 * sum(nu_components)
+    np = data.np
+    length(s.x) == total_velocity_dofs + np || error("State vector length mismatch: expected $(total_velocity_dofs + np), got $(length(s.x)).")
+    pω = Vector{Float64}(view(s.x, total_velocity_dofs + 1:total_velocity_dofs + np))
+
+    grads = Vector{SparseMatrixCSC{Float64,Int}}(undef, N)
+    Vmats = Vector{SparseMatrixCSC{Float64,Int}}(undef, N)
+    if N == 1
+        grads[1] = data.grad
+        Vmats[1] = data.V
+    elseif N == 2
+        grads[1] = data.grad_x
+        grads[2] = data.grad_y
+        Vmats[1] = data.Vx
+        Vmats[2] = data.Vy
+    elseif N == 3
+        grads[1] = data.grad_x
+        grads[2] = data.grad_y
+        grads[3] = data.grad_z
+        Vmats[1] = data.Vx
+        Vmats[2] = data.Vy
+        Vmats[3] = data.Vz
+    end
+
+    g_p = Vector{Vector{Float64}}(undef, N)
+    L_u = Vector{Vector{Float64}}(undef, N)
+    pressure_part = Vector{Vector{Float64}}(undef, N)
+    viscous_part = Vector{Vector{Float64}}(undef, N)
+    force_density = Vector{Vector{Float64}}(undef, N)
+
+    integrated_pressure = zeros(Float64, N)
+    integrated_viscous = zeros(Float64, N)
+    integrated_force = zeros(Float64, N)
+
+    offset = 0
+    for α in 1:N
+        nu = nu_components[α]
+        uω = Vector{Float64}(view(s.x, offset + 1:offset + nu))
+        uγ = Vector{Float64}(view(s.x, offset + nu + 1:offset + 2nu))
+        offset += 2nu
+
+        grad = grads[α]
+        gp_vec = -Vector{Float64}(grad * pω)
+        pressure_vec = -gp_vec
+
+        op = s.fluid.operator_u[α]
+        G_u = Vector{Float64}(op.G * uω)
+        if size(op.H, 2) == 0
+            H_u = zeros(Float64, size(op.G, 1))
+        else
+            H_u = Vector{Float64}(op.H * uγ)
+        end
+        W_dagger = op.Wꜝ
+        mixed = Vector{Float64}(W_dagger * (G_u + H_u))
+        Lu_vec = Vector{Float64}(op.G' * mixed)
+        Iμ = build_I_D(op, s.fluid.μ, s.fluid.capacity_u[α])
+        visc_vec = Vector{Float64}(Iμ * Lu_vec)
+
+        force_vec = pressure_vec .+ visc_vec
+
+        g_p[α] = gp_vec
+        L_u[α] = Lu_vec
+        pressure_part[α] = pressure_vec
+        viscous_part[α] = visc_vec
+        force_density[α] = force_vec
+
+        V = Vmats[α]
+        integrated_pressure[α] = sum(Vector{Float64}(pressure_vec))
+        integrated_viscous[α] = sum(Vector{Float64}(visc_vec))
+        integrated_force[α] = sum(Vector{Float64}(force_vec))
+    end
+
+    return (; g_p=Tuple(g_p),
+            L_u=Tuple(L_u),
+            pressure_part=Tuple(pressure_part),
+            viscous_part=Tuple(viscous_part),
+            force_density=Tuple(force_density),
+            integrated_pressure=Tuple(integrated_pressure),
+            integrated_viscous=Tuple(integrated_viscous),
+            integrated_force=Tuple(integrated_force))
 end
 
 """

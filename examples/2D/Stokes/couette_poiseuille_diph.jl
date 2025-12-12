@@ -15,7 +15,7 @@ Velocity and shear continuity enforced at the interface.
 ###########
 # Grids
 ###########
-nx, ny = 64, 64
+nx, ny = 32, 32
 Lx, H = 1.0, 1.0
 x0, y0 = 0.0, 0.0
 dx, dy = Lx/nx, H/ny
@@ -47,7 +47,7 @@ op_ux_b = DiffusionOps(cap_ux_b); op_uy_b = DiffusionOps(cap_uy_b); op_p_b = Dif
 U0 = 0.0    # bottom wall velocity  
 UH = 1.0    # top wall velocity
 G  = 1.0    # pressure gradient magnitude (dp/dx = -G)
-μ_a, μ_b = 1.0, 2.0  # viscosities (phase 1 = lower, phase 2 = upper)
+μ_a, μ_b = 1.0, 10.0  # viscosities (phase 1 = lower, phase 2 = upper)
 ρ_a, ρ_b = 1.0, 1.0
 
 ###########
@@ -183,10 +183,32 @@ ux_profile = ux_profile[2:end-1]
 ux_target_plot = ux_target[2:end-1]
 ys_profile = ys[2:end-1]
 
-fig = Figure(resolution=(900, 420))
-ax1 = Axis(fig[1, 1], xlabel="u_x", ylabel="y", title="Mid-channel profile (Couette–Poiseuille)")
-lines!(ax1, ux_profile, ys_profile, label="numerical")
-lines!(ax1, ux_target_plot, ys_profile, color=:red, linestyle=:dash, label="analytical")
+# Save the profile to cssv
+using CSV
+using DataFrames
+df = DataFrame(y = ys_profile, u_numerical = ux_profile, u_analytical = ux_target_plot)
+CSV.write("stokes_diph_couette_poiseuille_profile_$(nx).csv", df)
+
+fig = Figure(resolution=(800, 600), fontsize=18)
+ax1 = Axis(fig[1, 1], 
+    xlabel = L"\text{Velocity } u_x",
+    ylabel = "Height y", 
+    title = "Couette–Poiseuille Flow: Mid-channel Profile",
+    xminorticksvisible = true, 
+    yminorticksvisible = true,
+    xminorgridvisible = true,
+    yminorgridvisible = true,
+)
+
+# Interface line
+hlines!(ax1, [d], color=:gray, linestyle=:dashdot, linewidth=2, label="Interface")
+
+# Analytical
+lines!(ax1, ux_target_plot, ys_profile, color=:crimson, linewidth=3, label="Analytical")
+
+# Numerical
+scatter!(ax1, ux_profile, ys_profile, color=:dodgerblue, markersize=8, label="Numerical")
+
 axislegend(ax1, position=:rb)
 
 println("Profile Linf error (u_x vs analytical): ",
@@ -194,3 +216,112 @@ println("Profile Linf error (u_x vs analytical): ",
 
 display(fig)
 save("stokes_diph_couette_poiseuille_profile.png", fig)
+
+
+# Based on the csv data, plot on the same graph the profiles for various grid resolutions
+using CSV
+using DataFrames
+using CairoMakie
+
+function plot_couette_poiseuille_profiles(filenames::Vector{String}, nx_values::Vector{Int})
+    fig = Figure(resolution=(800, 600), fontsize=18)
+    ax = Axis(fig[1, 1], 
+        xlabel = L"\text{Velocity } u_x",
+        ylabel = "Height y", 
+        title = "Couette–Poiseuille Flow: Mid-channel Profiles (Zoomed)",
+        xminorticksvisible = true, 
+        yminorticksvisible = true,
+        xminorgridvisible = true,
+        yminorgridvisible = true,
+    )
+
+    # Interface line
+    d = 0.5  # interface location
+    hlines!(ax, [d], color=:gray, linestyle=:dashdot, linewidth=2, label="Interface")
+
+    # Plot each profile
+    for (filename, nx) in zip(filenames, nx_values)
+        df = CSV.read(filename, DataFrame)
+        ys = df.y
+        ux_numerical = df.u_numerical
+        scatter!(ax, ux_numerical, ys, label="Numerical (nx=$(nx))")
+    end
+
+    # Analytical solution
+    function u_exact(y)
+        if y <= d
+            return (G / (2 * μ_a)) * y^2 + const_C1 * y + U0
+        else
+            return (G / (2 * μ_b)) * y^2 + const_C3 * y + const_C4
+        end
+    end
+
+    ys_fine = range(0, H; length=500)
+    ux_analytical = [u_exact(y) for y in ys_fine]
+    lines!(ax, ux_analytical, ys_fine, color=:black, label="Analytical")
+
+    axislegend(ax, position=:rb)
+    # zoom in on the interface region
+    xlims!(ax, -0.2, 1.2)
+    ylims!(ax, d - 0.1, d + 0.1)
+        display(fig)
+
+    save("stokes_diph_couette_poiseuille_profiles_comparison_zoom.png", fig)
+end
+# Example usage
+filenames = [
+    "stokes_diph_couette_poiseuille_profile_16.csv",
+    "stokes_diph_couette_poiseuille_profile_32.csv",
+    "stokes_diph_couette_poiseuille_profile_64.csv",
+    "stokes_diph_couette_poiseuille_profile_128.csv",
+]
+nx_values = [16, 32, 64, 128]
+plot_couette_poiseuille_profiles(filenames, nx_values)
+
+# Reonstruct velocity field plots heatmaps + add interface line + add profile plot on the same heatmap
+U_global = zeros(length(xs), length(ys))
+for i in 1:length(xs)
+    for j in 1:length(ys)
+        if ys[j] <= d
+            U_global[i, j] = Ux1[i, j]
+        else
+            U_global[i, j] = Ux2[i, j]
+        end
+    end
+end
+
+# replace y=ymax by NaN
+for i in 1:length(xs)
+    U_global[i, end] = NaN
+end
+
+fig2 = Figure(resolution=(900, 500))
+ax2 = Axis(fig2[1, 1], xlabel="x", ylabel="y", title="U velocity field")
+hm = heatmap!(ax2, xs, ys, U_global; colormap=:viridis)
+
+# Interface line
+hlines!(ax2, [d], color=:red, linestyle=:dashdot, linewidth=2, label="Interface")
+Colorbar(fig2[1, 2], hm)
+ylims!(ax2, 0.0, H)
+xlims!(ax2, 0.0, Lx)
+
+# Add arrows 
+for j in 1:4:length(ys)
+    for i in 1:4:length(xs)
+        if ys[j] <= d
+            u_val = Ux1[i, j]/10
+            v_val = Uy1[i, j]/10
+        else
+            u_val = Ux2[i, j]/10
+            v_val = Uy2[i, j]/10
+        end
+        arrow_length = sqrt(u_val^2 + v_val^2) 
+        if arrow_length > 1e-8
+            quiver!(ax2, [xs[i]], [ys[j]], [u_val], [v_val]; color=:white, linewidth=1.5)
+        end
+    end
+end
+
+axislegend(ax2, position=:rt)
+display(fig2)
+save("stokes_diph_couette_poiseuille_velocity_field.png", fig2)

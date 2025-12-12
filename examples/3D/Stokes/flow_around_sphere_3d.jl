@@ -127,7 +127,7 @@ xlen = 2*(nu_x+nu_y+nu_z) + np
 x0_vec = zeros(xlen)
 
 solver = StokesMono(fluid, (bc_ux, bc_uy, bc_uz), pressure_gauge, bc_cut; x0=x0_vec)
-solve_StokesMono!(solver; algorithm=UMFPACKFactorization())
+solve_StokesMono!(solver; method=Base.:\)
 println("3D Stokes flow around sphere solved. Unknowns = ", length(solver.x))
 
 # Extract fields
@@ -406,3 +406,30 @@ println("  Mean error along radial: ", sum(rad_error) / n_radial)
 println("  Max error along radial: ", maximum(rad_error))
 
 println("="^60)
+
+###########
+# Drag Force Calculation
+###########
+println("\n" * "="^60)
+println("Drag Force Calculation")
+println("="^60)
+
+force_diag = compute_navierstokes_force_diagnostics(solver)
+body_force = navierstokes_reaction_force_components(force_diag; acting_on=:body)
+pressure_body = .-force_diag.integrated_pressure
+viscous_body = .-force_diag.integrated_viscous
+coeffs = drag_lift_coefficients(force_diag; ρ=ρ, U_ref=Umax, length_ref=2*R, acting_on=:body)
+
+println("Integrated forces on the sphere (body reaction):")
+println("  Fx = $(round(body_force[1]; sigdigits=6)) (pressure=$(round(pressure_body[1]; sigdigits=6)), viscous=$(round(viscous_body[1]; sigdigits=6)))")
+println("  Fy = $(round(body_force[2]; sigdigits=6)) (pressure=$(round(pressure_body[2]; sigdigits=6)), viscous=$(round(viscous_body[2]; sigdigits=6)))")
+println("  Fz = $(round(body_force[3]; sigdigits=6)) (pressure=$(round(pressure_body[3]; sigdigits=6)), viscous=$(round(viscous_body[3]; sigdigits=6)))")
+println("  Drag coefficient Cd = $(round(coeffs.Cd; sigdigits=6))")
+println("  Lift coefficient Cl = $(round(coeffs.Cl; sigdigits=6))")
+
+# Analytical Drag (Stokes Law for unbounded domain)
+# F_drag = 6 * pi * mu * R * U
+F_drag_ana = 6 * π * μ * R * Umax
+println("\nAnalytical Drag (Stokes Law, unbounded): ", round(F_drag_ana; sigdigits=6))
+println("Relative Error in Drag: ", round(abs(body_force[1] - F_drag_ana)/F_drag_ana * 100; digits=2), "%")
+println("(Note: Wall effects in a channel will increase drag significantly compared to unbounded Stokes flow)")
