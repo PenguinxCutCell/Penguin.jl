@@ -16,7 +16,7 @@ and visualize the velocity field around the moving body.
 ###########
 # Geometry
 ###########
-nx, ny = 128, 128
+nx, ny = 32, 32
 Lx, Ly = 4.0, 4.0
 x0, y0 = -2.0, -2.0
 
@@ -106,8 +106,12 @@ fluid = Fluid((mesh_ux, mesh_uy),
 # Time integration setup
 ###########
 Δt = 0.02
-T_end = 1.0  # Short simulation for testing
+T_end = 0.1  # Short simulation for testing
 scheme = :BE  # Backward Euler
+geometry_method = "VOFI"
+capacity_kwargs = (; method=geometry_method,
+                    integration_method=:vofijul,
+                    compute_centroids=true)
 
 # Initialize solver
 nu_x = prod(operator_ux.size)
@@ -129,11 +133,49 @@ times, states = solve_MovingStokesUnsteadyMono!(solver, body, mesh_p,
                                                  scheme=scheme,
                                                  method=Base.:\,
                                                  #method=IterativeSolvers.gmres,
-                                                 geometry_method="VOFI",
-                                                 integration_method=:vofijul,
-                                                 compute_centroids=true)
+                                                 geometry_method=geometry_method,
+                                                 integration_method=capacity_kwargs.integration_method,
+                                                 compute_centroids=capacity_kwargs.compute_centroids)
 
 println("Completed $(length(times)-1) time steps")
+
+###########
+# Force diagnostics (drag/lift at final time)
+###########
+if length(times) >= 2
+    t_prev, t_last = times[end-1], times[end]
+    STmesh_ux = Penguin.SpaceTimeMesh(mesh_ux, [t_prev, t_last], tag=mesh_p.tag)
+    STmesh_uy = Penguin.SpaceTimeMesh(mesh_uy, [t_prev, t_last], tag=mesh_p.tag)
+    STmesh_p = Penguin.SpaceTimeMesh(mesh_p, [t_prev, t_last], tag=mesh_p.tag)
+
+    capacity_ux_last = Capacity(body, STmesh_ux; capacity_kwargs...)
+    capacity_uy_last = Capacity(body, STmesh_uy; capacity_kwargs...)
+    capacity_p_last = Capacity(body, STmesh_p; capacity_kwargs...)
+
+    operator_ux_last = DiffusionOps(capacity_ux_last)
+    operator_uy_last = DiffusionOps(capacity_uy_last)
+    operator_p_last = DiffusionOps(capacity_p_last)
+
+    block_data = Penguin.stokes2D_moving_blocks(solver.fluid,
+                                                (operator_ux_last, operator_uy_last),
+                                                (capacity_ux_last, capacity_uy_last),
+                                                operator_p_last, capacity_p_last,
+                                                scheme)
+
+    force_diag = compute_navierstokes_force_diagnostics(solver, block_data)
+    body_force = navierstokes_reaction_force_components(force_diag; acting_on=:body)
+    pressure_body = .-force_diag.integrated_pressure
+    viscous_body = .-force_diag.integrated_viscous
+    U_ref = A_osc * ω_osc
+    coeffs = drag_lift_coefficients(force_diag; ρ=ρ, U_ref=U_ref, length_ref=2 * radius, acting_on=:body)
+
+    println("Forces on the circle at t=$(round(t_last; digits=3)):")
+    println("  Drag  = $(round(body_force[1]; sigdigits=6)) (pressure=$(round(pressure_body[1]; sigdigits=6)), viscous=$(round(viscous_body[1]; sigdigits=6)))")
+    println("  Lift  = $(round(body_force[2]; sigdigits=6)) (pressure=$(round(pressure_body[2]; sigdigits=6)), viscous=$(round(viscous_body[2]; sigdigits=6)))")
+    println("  Cd = $(round(coeffs.Cd; sigdigits=6)), Cl = $(round(coeffs.Cl; sigdigits=6)) (U_ref=$(U_ref))")
+else
+    println("Not enough time samples to compute drag/lift diagnostics.")
+end
 
 ###########
 # Visualization
