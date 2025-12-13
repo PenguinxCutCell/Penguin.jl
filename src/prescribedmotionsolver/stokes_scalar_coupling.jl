@@ -234,7 +234,7 @@ function _apply_buoyancy_force_2D!(c::MovingStokesScalarCoupler{2},
     # Buoyancy force: F = -ρ * β * g * ΔT
     ρ = c.stokes.fluid.ρ
     ρ isa Function && error("Spatially varying density not supported for buoyancy.")
-    ρ_val = ρ isa Number ? Float64(ρ) : float(ρ)
+    ρ_val = Float64(ρ)
     
     # Apply to momentum equations
     row_uωx = 0
@@ -405,6 +405,7 @@ function solve_MovingStokesScalarCoupler!(c::MovingStokesScalarCoupler{2},
                 Ared \ bred
             catch e
                 if e isa SingularException
+                    # Note: IterativeSolvers is imported by main Penguin module
                     @warn "Direct solver hit SingularException; falling back to bicgstabl"
                     IterativeSolvers.bicgstabl(Ared, bred)
                 else
