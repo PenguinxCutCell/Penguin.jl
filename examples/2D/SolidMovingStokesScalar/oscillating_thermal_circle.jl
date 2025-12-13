@@ -321,7 +321,7 @@ function animate_coupled_solution(times, velocity_states, scalar_states,
     circle_x_obs = Observable(center_x .+ radius .* cos.(θ_circle))
     circle_y_obs = Observable(cy0 .+ radius .* sin.(θ_circle))
     
-    fig_anim = Figure(resolution=(1000, 900))
+    fig_anim = Figure(size=(1000, 900))
     
     # Velocity panel
     ax1 = Axis(fig_anim[1,1], xlabel="x", ylabel="y", 

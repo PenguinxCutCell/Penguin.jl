@@ -135,6 +135,7 @@ function _build_scalar_system_moving(operator::ConvectionOps,
     
     # Build matrix and RHS using existing advection-diffusion functions
     A_T = A_mono_unstead_advdiff(operator, capacity, κ, bc_scalar_cut, Δt, scheme_str)
+    # Signature: b_mono_unstead_advdiff(operator, f, capacite, D, bc, Tᵢ, Δt, t, scheme)
     b_T = b_mono_unstead_advdiff(operator, scalar_source, capacity, κ, bc_scalar_cut,
                                   scalar_prev, Δt, t_prev, scheme_str)
     
@@ -181,6 +182,8 @@ function _extract_velocity_bulk_2D(c::MovingStokesScalarCoupler{2},
     Uy = reshape(uωy, (Nx_uy, Ny_uy))
     
     # Project to scalar mesh (nearest neighbor for simplicity)
+    # TODO: For better accuracy, consider pre-computing index mappings or using
+    # direct index calculations for uniform grids instead of searchsortedfirst
     for j in 1:Ny_T
         y = scalar_nodes[2][j]
         jx = clamp(searchsortedfirst(ux_nodes[2], y), 1, Ny_ux)
@@ -225,13 +228,13 @@ function _apply_buoyancy_force_2D!(c::MovingStokesScalarCoupler{2},
     nu_y = stokes_data.nu_y
     
     # Simple approach: assume uniform temperature for each velocity component
-    # This is simplified - full implementation would interpolate properly
+    # TODO: Full implementation should use proper spatial interpolation from scalar mesh to velocity mesh
     T_mean = mean(ΔT)
     
     # Buoyancy force: F = -ρ * β * g * ΔT
     ρ = c.stokes.fluid.ρ
     ρ isa Function && error("Spatially varying density not supported for buoyancy.")
-    ρ_val = float(ρ)
+    ρ_val = ρ isa Number ? Float64(ρ) : float(ρ)
     
     # Apply to momentum equations
     row_uωx = 0
