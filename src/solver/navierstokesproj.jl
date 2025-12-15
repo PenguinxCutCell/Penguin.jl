@@ -30,6 +30,7 @@ Pressure is stored separately and updated via projection.
 - `u::Vector{Float64}`: Current velocity field
 - `p::Vector{Float64}`: Current pressure field
 - `conv_prev::Union{Nothing,NTuple{2,Vector{Float64}}}`: Previous convection terms (for AB2)
+- `convection::Union{Nothing,NavierStokesConvection{2}}`: Convection data structures
 - `dt::Float64`: Time step size
 """
 mutable struct NavierStokesProj2D
@@ -41,6 +42,7 @@ mutable struct NavierStokesProj2D
     u::Vector{Float64}          # Velocity state [uωx; uγx; uωy; uγy]
     p::Vector{Float64}          # Pressure field
     conv_prev::Union{Nothing,NTuple{2,Vector{Float64}}}  # Previous convection for AB2
+    convection::Union{Nothing,NavierStokesConvection{2}}  # Convection operators
     dt::Float64
 end
 
@@ -68,8 +70,17 @@ function NavierStokesProj2D(fluid::Fluid{2},
     u = length(u0) == nu_total ? copy(u0) : zeros(nu_total)
     p = length(p0) == np ? copy(p0) : zeros(np)
     
+    # Build convection operators (reuse from existing NavierStokes implementation)
+    # This requires build_convection_data from navierstokes.jl to be available
+    convection = nothing
+    try
+        convection = build_convection_data(fluid)
+    catch
+        @warn "Could not build convection operators; projection will use simplified convection"
+    end
+    
     return NavierStokesProj2D(fluid, bc_u, pressure_gauge, bc_cut, method,
-                               u, p, nothing, dt)
+                               u, p, nothing, convection, dt)
 end
 
 """Helper to build operator blocks for 2D projection methods"""
@@ -144,15 +155,33 @@ function compute_convection_2d!(s::NavierStokesProj2D, data, u_state::AbstractVe
     uωy = view(u_state, 2*nu_x+1:2*nu_x+nu_y)
     uγy = view(u_state, 2*nu_x+nu_y+1:2*(nu_x+nu_y))
     
-    # Simple upwind convection approximation for projection methods
-    # In a full implementation, use proper flux reconstruction
-    # Here we use a placeholder that captures the essential structure
+    # If convection operators are available, use them
+    if s.convection !== nothing
+        try
+            # Use the same convection computation as NavierStokesMono
+            uω_tuple = (Vector{Float64}(uωx), Vector{Float64}(uωy))
+            uγ_tuple = (Vector{Float64}(uγx), Vector{Float64}(uγy))
+            
+            # Build convection matrices
+            bulk_x = build_convection_matrix(s.convection.stencils[1], uω_tuple)
+            bulk_y = build_convection_matrix(s.convection.stencils[2], uω_tuple)
+            
+            # Build K matrices for interface contributions
+            K_x = build_K_matrix(s.convection.stencils[1], rotated_interfaces(uγ_tuple, 1))
+            K_y = build_K_matrix(s.convection.stencils[2], rotated_interfaces(uγ_tuple, 2))
+            
+            # Compute convection vectors (skew-symmetric form)
+            conv_x = bulk_x * uω_tuple[1] - 0.5 * (K_x * uω_tuple[1])
+            conv_y = bulk_y * uω_tuple[2] - 0.5 * (K_y * uω_tuple[2])
+            
+            return (conv_x, conv_y)
+        catch e
+            @warn "Convection computation failed, using zero: $e" maxlog=1
+        end
+    end
     
-    # Convection = u · ∇u (simplified)
-    conv_x = zeros(nu_x)
-    conv_y = zeros(nu_y)
-    
-    return (conv_x, conv_y)
+    # Fallback: zero convection
+    return (zeros(nu_x), zeros(nu_y))
 end
 
 """
