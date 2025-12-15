@@ -185,7 +185,7 @@ end
 ###########
 println("Creating visualization...")
 
-fig = Figure(resolution=(1200, 800))
+fig = Figure(size=(1200, 800))
 
 # Plot pressure fields at final time for each method
 for (idx, (method_enum, method_name)) in enumerate(methods)
