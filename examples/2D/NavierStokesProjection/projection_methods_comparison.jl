@@ -192,7 +192,10 @@ for (idx, (method_enum, method_name)) in enumerate(methods)
     p_field = results[method_name].solver.p
     
     # Reshape pressure for plotting
-    p_2d = reshape(p_field, (nx+1, ny+1))
+    # Get actual pressure mesh dimensions
+    p_nx = length(results[method_name].solver.fluid.mesh_p.nodes[1])
+    p_ny = length(results[method_name].solver.fluid.mesh_p.nodes[2])
+    p_2d = reshape(p_field, (p_nx, p_ny))
     
     ax = Axis(fig[1, idx],
               title=method_name,

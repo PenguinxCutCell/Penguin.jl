@@ -99,7 +99,7 @@ This example:
 
 ## Implementation Details
 
-The projection methods are implemented in `/home/runner/work/Penguin.jl/Penguin.jl/src/solver/navierstokesproj.jl` with:
+The projection methods are implemented in `src/solver/navierstokesproj.jl` with:
 
 - Enum `ProjectionMethod` with values: `ChorinTemam`, `IncrementalPC`, `RotationalPC`
 - Struct `NavierStokesProj2D` containing solver state

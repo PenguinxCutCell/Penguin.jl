@@ -202,7 +202,16 @@ function compute_intermediate_velocity!(s::NavierStokesProj2D, data, t::Float64)
     conv_curr = compute_convection_2d!(s, data, s.u)
     
     # Adams-Bashforth 2 for convection
-    ρ = s.fluid.ρ isa Function ? 1.0 : s.fluid.ρ
+    ρ = s.fluid.ρ
+    ρ_val = if ρ isa Function
+        # For variable density, evaluate at a representative point (domain center)
+        # In a more sophisticated implementation, this would be evaluated at each cell
+        x_mid = (s.fluid.mesh_p.nodes[1][1] + s.fluid.mesh_p.nodes[1][end]) / 2
+        y_mid = (s.fluid.mesh_p.nodes[2][1] + s.fluid.mesh_p.nodes[2][end]) / 2
+        ρ(x_mid, y_mid, 0.0)
+    else
+        ρ
+    end
     if s.conv_prev === nothing
         # First step: use forward Euler
         conv_explicit_x = -ρ .* conv_curr[1]
@@ -245,7 +254,10 @@ function compute_intermediate_velocity!(s::NavierStokesProj2D, data, t::Float64)
         rhs_y .-= data.grad_y * s.p
     end
     
-    # Solve for intermediate velocity (simplified - no BC application here)
+    # Solve for intermediate velocity
+    # Note: Boundary conditions should be applied here for proper projection
+    # For now, solving without BC application as a simplified first implementation
+    # TODO: Add proper BC handling using apply_velocity_dirichlet_2D! from stokes.jl
     u_star_x = A_x \ rhs_x
     u_star_y = A_y \ rhs_y
     
@@ -271,18 +283,20 @@ function solve_pressure_poisson!(s::NavierStokesProj2D, data, u_star::AbstractVe
     
     # Build Poisson matrix for pressure: ∇·∇p = ∇·u*/Δt
     # We need the negative of the divergence-gradient operator
-    # Construct from the gradient operators
+    # Construct from the gradient operators with proper capacity weighting
     op_p = data.op_p
     
-    # Laplacian ≈ -div(grad) where grad and div are adjoints
-    # Using the fact that the divergence is the adjoint of the negative gradient
-    # L = G'*G + H'*H (simplified form, proper weighting may be needed)
+    # Get pressure capacity volume matrix for proper weighting
+    V_p = data.cap_p.V
+    
+    # Laplacian with proper volume weighting
+    # L = -div(grad) = -(G' + H')*(G + H) with capacity weighting
     Gp = op_p.G
     Hp = op_p.H
     
-    # Build Laplacian matrix (needs proper weighting)
-    # For now use a simplified form
-    L_p = -(Gp' * Gp + Hp' * Hp)
+    # Construct weighted Laplacian (simplified form - full implementation 
+    # would include proper metric terms and boundary handling)
+    L_p = -(Gp' * V_p * Gp + Hp' * V_p * Hp)
     
     rhs_poisson = (1.0 / Δt) .* div_u_star
     
@@ -334,13 +348,25 @@ function correct_velocity!(s::NavierStokesProj2D, data, u_star::AbstractVector{<
         grad_phi_x = data.grad_x * phi
         grad_phi_y = data.grad_y * phi
         
-        # Compute ∇(∇·u*)
+        # Compute ∇(∇·u*) - this is the rotational correction term
+        # TODO: Proper implementation requires computing the gradient of divergence
+        # which needs careful stencil construction. This is a simplified placeholder.
         div_u_star = data.div_x_ω * u_star_ωx + data.div_y_ω * u_star_ωy
-        # This is a simplification; proper implementation needs ∇(div(u*))
+        # Note: This applies gradient to a scalar field which gives approximate correction
+        # Full implementation would need proper second-derivative stencils
         grad_div_x = data.grad_x * div_u_star
         grad_div_y = data.grad_y * div_u_star
         
-        ν = s.fluid.μ / (s.fluid.ρ isa Function ? 1.0 : s.fluid.ρ)
+        # Get kinematic viscosity
+        ρ = s.fluid.ρ
+        ρ_val = if ρ isa Function
+            x_mid = (s.fluid.mesh_p.nodes[1][1] + s.fluid.mesh_p.nodes[1][end]) / 2
+            y_mid = (s.fluid.mesh_p.nodes[2][1] + s.fluid.mesh_p.nodes[2][end]) / 2
+            ρ(x_mid, y_mid, 0.0)
+        else
+            ρ
+        end
+        ν = s.fluid.μ / ρ_val
         grad_p_x = grad_phi_x .- ν .* grad_div_x
         grad_p_y = grad_phi_y .- ν .* grad_div_y
     end
