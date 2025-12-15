@@ -83,6 +83,32 @@ function NavierStokesProj2D(fluid::Fluid{2},
                                u, p, nothing, convection, dt)
 end
 
+"""
+Safe linear solve with zero row/column removal
+"""
+function safe_linear_solve(A::SparseMatrixCSC{Float64, Int}, b::Vector{Float64})
+    # Remove zero rows and columns to avoid singular matrices
+    Ared, bred, keep_idx_rows, keep_idx_cols = remove_zero_rows_cols!(A, b)
+    
+    # Solve the reduced system
+    xred = try
+        Ared \ bred
+    catch e
+        if e isa SingularException
+            @warn "Direct solver hit SingularException; falling back to bicgstabl" sizeA=size(Ared)
+            IterativeSolvers.bicgstabl(Ared, bred)
+        else
+            rethrow(e)
+        end
+    end
+    
+    # Reconstruct full solution
+    N = size(A, 2)
+    x = zeros(N)
+    x[keep_idx_cols] = xred
+    return x
+end
+
 """Helper to build operator blocks for 2D projection methods"""
 function build_projection_blocks(s::NavierStokesProj2D)
     ops_u = s.fluid.operator_u
@@ -258,8 +284,8 @@ function compute_intermediate_velocity!(s::NavierStokesProj2D, data, t::Float64)
     # Note: Boundary conditions should be applied here for proper projection
     # For now, solving without BC application as a simplified first implementation
     # TODO: Add proper BC handling using apply_velocity_dirichlet_2D! from stokes.jl
-    u_star_x = A_x \ rhs_x
-    u_star_y = A_y \ rhs_y
+    u_star_x = safe_linear_solve(A_x, rhs_x)
+    u_star_y = safe_linear_solve(A_y, rhs_y)
     
     return vcat(u_star_x, zeros(nu_x), u_star_y, zeros(nu_y))
 end
@@ -310,10 +336,10 @@ function solve_pressure_poisson!(s::NavierStokesProj2D, data, u_star::AbstractVe
     # Solve Poisson equation
     if s.method == ChorinTemam
         # Solve for p^{n+1} directly
-        p_new = A_poisson \ b_poisson
+        p_new = safe_linear_solve(A_poisson, b_poisson)
     else
         # Solve for pressure increment ϕ
-        phi = A_poisson \ b_poisson
+        phi = safe_linear_solve(A_poisson, b_poisson)
         # Update pressure: p^{n+1} = p^n + ϕ
         p_new = s.p .+ phi
     end
