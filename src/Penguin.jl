@@ -156,5 +156,5 @@ export StreamVorticity, solve_StreamVorticity!, step_StreamVorticity!, run_Strea
 
 include("solver/navierstokesproj.jl")
 export ProjectionMethod, ChorinTemam, IncrementalPC, RotationalPC
-export NavierStokesProj2D, solve_NavierStokesProj2D!, solve_NavierStokesProj2D_step!
+export NavierStokesProj2D, solve_NavierStokesProj2D!, solve_NavierStokesProj2D_step!, compute_divergence
 end

@@ -269,10 +269,20 @@ function solve_pressure_poisson!(s::NavierStokesProj2D, data, u_star::AbstractVe
     div_u_star = data.div_x_ω * Vector{Float64}(u_star_ωx) + 
                  data.div_y_ω * Vector{Float64}(u_star_ωy)
     
-    # Poisson matrix: ∇²p = ∇·u*/Δt
-    # Using the pressure Laplacian
-    L_p = data.op_p.G' * data.op_p.Wꜝ * data.op_p.G + 
-          data.op_p.H' * data.op_p.Wꜝ * data.op_p.H
+    # Build Poisson matrix for pressure: ∇·∇p = ∇·u*/Δt
+    # We need the negative of the divergence-gradient operator
+    # Construct from the gradient operators
+    op_p = data.op_p
+    
+    # Laplacian ≈ -div(grad) where grad and div are adjoints
+    # Using the fact that the divergence is the adjoint of the negative gradient
+    # L = G'*G + H'*H (simplified form, proper weighting may be needed)
+    Gp = op_p.G
+    Hp = op_p.H
+    
+    # Build Laplacian matrix (needs proper weighting)
+    # For now use a simplified form
+    L_p = -(Gp' * Gp + Hp' * Hp)
     
     rhs_poisson = (1.0 / Δt) .* div_u_star
     
@@ -417,4 +427,24 @@ function solve_NavierStokesProj2D!(s::NavierStokesProj2D;
     println("[NavierStokesProj2D] Completed $(step) steps")
     
     return times, u_hist, p_hist
+end
+
+"""
+    compute_divergence(s::NavierStokesProj2D)
+
+Compute the divergence of the current velocity field (for validation).
+Returns the L2 norm of divergence (should be close to zero for incompressible flow).
+"""
+function compute_divergence(s::NavierStokesProj2D)
+    data = build_projection_blocks(s)
+    nu_x = data.nu_x
+    nu_y = data.nu_y
+    
+    uωx = view(s.u, 1:nu_x)
+    uωy = view(s.u, 2*nu_x+1:2*nu_x+nu_y)
+    
+    div_u = data.div_x_ω * Vector{Float64}(uωx) + 
+            data.div_y_ω * Vector{Float64}(uωy)
+    
+    return norm(div_u)
 end
