@@ -153,4 +153,8 @@ export NavierStokesScalarCoupler, step!, solve_NavierStokesScalarCoupling!, solv
 
 include("solver/streamfunction_vorticity.jl")
 export StreamVorticity, solve_StreamVorticity!, step_StreamVorticity!, run_StreamVorticity!, run_until_StreamVorticity!
+
+include("solver/navierstokesproj.jl")
+export ProjectionMethod, ChorinTemam, IncrementalPC, RotationalPC
+export NavierStokesProj2D, solve_NavierStokesProj2D!, solve_NavierStokesProj2D_step!
 end
