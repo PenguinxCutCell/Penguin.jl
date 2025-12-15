@@ -73,6 +73,19 @@ function psim_stokes_be(args::Vararg{T,2}) where {T<:Real}
     0.0
 end
 
+@inline function spacetime_spatial_size(dims::NTuple{N,Int}) where {N}
+    nt = dims[end]
+    total = prod(dims)
+    spatial = div(total, nt)
+    return spatial, nt, total
+end
+
+@inline function time_block_indices(spatial::Int, nt::Int, time_idx::Int=1)
+    (1 <= time_idx <= nt) || throw(ArgumentError("time_idx must be in 1:$nt, got $time_idx"))
+    start = (time_idx - 1) * spatial + 1
+    return start:start + spatial - 1
+end
+
 """
     MovingStokesUnsteadyMono(fluid, bc_u, pressure_gauge, bc_cut; scheme=:BE, x0=zeros(0))
 
@@ -149,10 +162,8 @@ function stokes1D_moving_blocks(fluid::Fluid{1},
     
     # Extract spatial sizes
     if len_dims == 2
-        nx_u, _ = dims_u
-        nx_p, _ = dims_p
-        nu = nx_u
-        np = nx_p
+        nu, nt_u, total_u = spacetime_spatial_size(dims_u)
+        np, nt_p, _ = spacetime_spatial_size(dims_p)
     else
         error("Moving Stokes 1D requires 2D space-time mesh (nx, nt)")
     end
@@ -171,20 +182,28 @@ function stokes1D_moving_blocks(fluid::Fluid{1},
     Ψn1_u = Diagonal(psip.(Vn_u, Vn_1_u))
     Ψn_u = Diagonal(psim.(Vn_u, Vn_1_u))
     
-    # Extract operator sub-blocks (n+1 time level, first half)
-    W_u = op_u.Wꜝ[1:end÷2, 1:end÷2]
-    G_u = op_u.G[1:end÷2, 1:end÷2]
-    H_u = op_u.H[1:end÷2, 1:end÷2]
-    V_u = op_u.V[1:end÷2, 1:end÷2]
+    # Extract operator sub-blocks at t^{n+1} (drop temporal derivative block)
+    cols_u = time_block_indices(nu, nt_u)
+    rows_u = cols_u
+    W_u = op_u.Wꜝ[rows_u, rows_u]
+    G_u = op_u.G[rows_u, cols_u]
+    H_u = op_u.H[rows_u, cols_u]
+    V_u = op_u.V[cols_u, cols_u]
     
     # Pressure operators (space-time)
-    G_p_full = op_p.G[1:end÷2, 1:end÷2]
-    H_p_full = op_p.H[1:end÷2, 1:end÷2]
+    cols_p = time_block_indices(np, nt_p)
+    total_grad_rows = size(op_p.G, 1)
+    rows_per_time = div(total_grad_rows, nt_p)
+    rows_per_time >= nu || error("Pressure gradient rows per time ($rows_per_time) must be >= velocity DOFs ($nu) in 1D moving Stokes.")
+    rows_block = time_block_indices(rows_per_time, nt_p)
+    rows_p = rows_block[1:nu]  # keep spatial gradient rows; drop temporal rows
+    G_p_full = op_p.G[rows_p, cols_p]
+    H_p_full = op_p.H[rows_p, cols_p]
     
     # Build viscosity operators
     μ = fluid.μ
     Iμ_u = build_I_D(op_u, μ, cap_u)
-    Iμ_u = Iμ_u[1:end÷2, 1:end÷2]
+    Iμ_u = Iμ_u[cols_u, cols_u]
     
     # Viscous blocks
     visc_uω = Iμ_u * G_u' * W_u * G_u
@@ -192,27 +211,18 @@ function stokes1D_moving_blocks(fluid::Fluid{1},
     
     # Pressure gradient (only keep the n+1 velocity rows)
     grad_full = G_p_full + H_p_full
-    total_grad_rows = size(grad_full, 1)
-    if total_grad_rows >= nu
-        grad = -grad_full[1:nu, :]
-    else
-        error("Pressure gradient operator has unexpected dimensions: expected at least $nu rows, got $total_grad_rows")
-    end
+    grad = -grad_full
     
     # Divergence operators (matching the truncated gradient rows)
-    if total_grad_rows >= nu
-        Gp = G_p_full[1:nu, :]
-        Hp = H_p_full[1:nu, :]
-        div_uω = -(Gp' + Hp')
-        div_uγ = Hp'
-    else
-        error("Divergence operator has unexpected dimensions: expected at least $nu rows, got $total_grad_rows")
-    end
+    Gp = G_p_full
+    Hp = H_p_full
+    div_uω = -(Gp' + Hp')
+    div_uγ = Hp'
     
     # Mass matrices for density
     ρ = fluid.ρ
     mass = build_I_D(op_u, ρ, cap_u)
-    mass = mass[1:end÷2, 1:end÷2] * V_u
+    mass = mass[cols_u, cols_u] * V_u
     
     return (; nu, np,
             op_u, op_p,
@@ -249,12 +259,9 @@ function stokes2D_moving_blocks(fluid::Fluid{2},
 
     # Extract spatial sizes
     if len_dims == 3
-        nx_ux, ny_ux, _ = dims_ux
-        nx_uy, ny_uy, _ = dims_uy
-        nx_p, ny_p, _ = dims_p
-        nu_x = nx_ux * ny_ux
-        nu_y = nx_uy * ny_uy
-        np = nx_p * ny_p
+        nu_x, nt_ux, total_ux = spacetime_spatial_size(dims_ux)
+        nu_y, nt_uy, total_uy = spacetime_spatial_size(dims_uy)
+        np, nt_p, total_p = spacetime_spatial_size(dims_p)
     else
         error("Moving Stokes 2D requires 3D space-time mesh (nx, ny, nt)")
     end
@@ -281,27 +288,49 @@ function stokes2D_moving_blocks(fluid::Fluid{2},
     Ψn_uy = Diagonal(psim.(Vn_uy, Vn_1_uy))
     Ψn_p = Diagonal(psim.(Vn_p, Vn_1_p))
 
-    # Extract operator sub-blocks (n+1 time level, first half)
-    W_ux = ops_u[1].Wꜝ[1:end÷2, 1:end÷2]
-    G_ux = ops_u[1].G[1:end÷2, 1:end÷2]
-    H_ux = ops_u[1].H[1:end÷2, 1:end÷2]
-    V_ux = ops_u[1].V[1:end÷2, 1:end÷2]
+    # Extract operator sub-blocks at t^{n+1} (drop temporal derivative block)
+    cols_ux = time_block_indices(nu_x, nt_ux)
+    rows_ux_x = cols_ux
+    rows_ux_y = total_ux .+ cols_ux
 
-    W_uy = ops_u[2].Wꜝ[1:end÷2, 1:end÷2]
-    G_uy = ops_u[2].G[1:end÷2, 1:end÷2]
-    H_uy = ops_u[2].H[1:end÷2, 1:end÷2]
-    V_uy = ops_u[2].V[1:end÷2, 1:end÷2]
+    cols_uy = time_block_indices(nu_y, nt_uy)
+    rows_uy_x = cols_uy
+    rows_uy_y = total_uy .+ cols_uy
 
-    # Pressure operators (space-time)
-    G_p_full = op_p.G[1:end÷2, 1:end÷2]
-    H_p_full = op_p.H[1:end÷2, 1:end÷2]
+    cols_p = time_block_indices(np, nt_p)
+    total_grad_rows = size(op_p.G, 1)
+    rows_per_time = div(total_grad_rows, nt_p)
+    rows_per_time >= nu_x + nu_y || error("Pressure gradient rows per time ($rows_per_time) must be >= velocity DOFs ($(nu_x + nu_y)) in 2D moving Stokes.")
+    rows_block = time_block_indices(rows_per_time, nt_p)
+    rows_p_x = rows_block[1:nu_x]
+    rows_p_y = rows_block[nu_x+1:nu_x+nu_y]
+
+    W_ux = blockdiag(ops_u[1].Wꜝ[rows_ux_x, rows_ux_x], ops_u[1].Wꜝ[rows_ux_y, rows_ux_y])
+    G_ux = vcat(ops_u[1].G[rows_ux_x, cols_ux],
+                ops_u[1].G[rows_ux_y, cols_ux])
+    H_ux = vcat(ops_u[1].H[rows_ux_x, cols_ux],
+                ops_u[1].H[rows_ux_y, cols_ux])
+    V_ux = ops_u[1].V[cols_ux, cols_ux]
+
+    W_uy = blockdiag(ops_u[2].Wꜝ[rows_uy_x, rows_uy_x], ops_u[2].Wꜝ[rows_uy_y, rows_uy_y])
+    G_uy = vcat(ops_u[2].G[rows_uy_x, cols_uy],
+                ops_u[2].G[rows_uy_y, cols_uy])
+    H_uy = vcat(ops_u[2].H[rows_uy_x, cols_uy],
+                ops_u[2].H[rows_uy_y, cols_uy])
+    V_uy = ops_u[2].V[cols_uy, cols_uy]
+
+    # Pressure operators (space-time) on the t^{n+1} slice
+    G_p_full_x = op_p.G[rows_p_x, cols_p]
+    H_p_full_x = op_p.H[rows_p_x, cols_p]
+    G_p_full_y = op_p.G[rows_p_y, cols_p]
+    H_p_full_y = op_p.H[rows_p_y, cols_p]
 
     # Build viscosity operators
     μ = fluid.μ
     Iμ_ux = build_I_D(ops_u[1], μ, caps_u[1])
     Iμ_uy = build_I_D(ops_u[2], μ, caps_u[2])
-    Iμ_ux = Iμ_ux[1:end÷2, 1:end÷2]
-    Iμ_uy = Iμ_uy[1:end÷2, 1:end÷2]
+    Iμ_ux = Iμ_ux[cols_ux, cols_ux]
+    Iμ_uy = Iμ_uy[cols_uy, cols_uy]
 
     # Viscous blocks
     visc_x_ω = Iμ_ux * G_ux' * W_ux * G_ux
@@ -310,41 +339,26 @@ function stokes2D_moving_blocks(fluid::Fluid{2},
     visc_y_γ = Iμ_uy * G_uy' * W_uy * H_uy
 
     # Pressure gradient (need to extract x and y rows)
-    grad_full = G_p_full + H_p_full
-    total_grad_rows = size(grad_full, 1)
-    
-    # For staggered grids, grad should map pressure to velocity DOFs
-    x_rows = 1:nu_x
-    y_rows = nu_x+1:nu_x+nu_y
-
-    if total_grad_rows >= nu_x + nu_y
-        grad_x = -grad_full[x_rows, :]
-        grad_y = -grad_full[y_rows, :]
-    else
-        error("Pressure gradient operator has unexpected dimensions: expected $(nu_x + nu_y) rows, got $(total_grad_rows)")
-    end
+    grad_x = -(G_p_full_x + H_p_full_x)
+    grad_y = -(G_p_full_y + H_p_full_y)
 
     # Divergence operators
-    Gp_x = G_p_full[x_rows, :]
-    Hp_x = H_p_full[x_rows, :]
-    Gp_y = G_p_full[y_rows, :]
-    Hp_y = H_p_full[y_rows, :]
+    Gp_x = G_p_full_x
+    Hp_x = H_p_full_x
+    Gp_y = G_p_full_y
+    Hp_y = H_p_full_y
 
-    if total_grad_rows >= nu_x + nu_y
-        div_x_ω = -(Gp_x' + Hp_x')
-        div_x_γ = Hp_x'
-        div_y_ω = -(Gp_y' + Hp_y')
-        div_y_γ = Hp_y'
-    else
-        error("Divergence operator has unexpected dimensions: expected $(nu_x + nu_y) rows, got $(total_grad_rows)")
-    end
+    div_x_ω = -(Gp_x' + Hp_x')
+    div_x_γ = Hp_x'
+    div_y_ω = -(Gp_y' + Hp_y')
+    div_y_γ = Hp_y'
 
     # Mass matrices for density
     ρ = fluid.ρ
     mass_x = build_I_D(ops_u[1], ρ, caps_u[1])
     mass_y = build_I_D(ops_u[2], ρ, caps_u[2])
-    mass_x = mass_x[1:end÷2, 1:end÷2] * V_ux
-    mass_y = mass_y[1:end÷2, 1:end÷2] * V_uy
+    mass_x = mass_x[cols_ux, cols_ux] * V_ux
+    mass_y = mass_y[cols_uy, cols_uy] * V_uy
 
     return (; nu_x, nu_y, np,
             op_ux=ops_u[1], op_uy=ops_u[2], op_p,
@@ -382,14 +396,10 @@ function stokes3D_moving_blocks(fluid::Fluid{3},
     
     # Extract spatial sizes
     if len_dims == 4
-        nx_ux, ny_ux, nz_ux, _ = dims_ux
-        nx_uy, ny_uy, nz_uy, _ = dims_uy
-        nx_uz, ny_uz, nz_uz, _ = dims_uz
-        nx_p, ny_p, nz_p, _ = dims_p
-        nu_x = nx_ux * ny_ux * nz_ux
-        nu_y = nx_uy * ny_uy * nz_uy
-        nu_z = nx_uz * ny_uz * nz_uz
-        np = nx_p * ny_p * nz_p
+        nu_x, nt_ux, total_ux = spacetime_spatial_size(dims_ux)
+        nu_y, nt_uy, total_uy = spacetime_spatial_size(dims_uy)
+        nu_z, nt_uz, total_uz = spacetime_spatial_size(dims_uz)
+        np, nt_p, total_p = spacetime_spatial_size(dims_p)
     else
         error("Moving Stokes 3D requires 4D space-time mesh (nx, ny, nz, nt)")
     end
@@ -416,34 +426,81 @@ function stokes3D_moving_blocks(fluid::Fluid{3},
     Ψn_uy = Diagonal(psim.(Vn_uy, Vn_1_uy))
     Ψn_uz = Diagonal(psim.(Vn_uz, Vn_1_uz))
     
-    # Extract operator sub-blocks (n+1 time level, first half)
-    W_ux = ops_u[1].Wꜝ[1:end÷2, 1:end÷2]
-    G_ux = ops_u[1].G[1:end÷2, 1:end÷2]
-    H_ux = ops_u[1].H[1:end÷2, 1:end÷2]
-    V_ux = ops_u[1].V[1:end÷2, 1:end÷2]
+    # Extract operator sub-blocks at t^{n+1} (drop temporal derivative block)
+    cols_ux = time_block_indices(nu_x, nt_ux)
+    cols_uy = time_block_indices(nu_y, nt_uy)
+    cols_uz = time_block_indices(nu_z, nt_uz)
+    cols_p = time_block_indices(np, nt_p)
+
+    rows_ux_x = cols_ux
+    rows_ux_y = total_ux .+ cols_ux
+    rows_ux_z = (2 * total_ux) .+ cols_ux
+
+    rows_uy_x = cols_uy
+    rows_uy_y = total_uy .+ cols_uy
+    rows_uy_z = (2 * total_uy) .+ cols_uy
+
+    rows_uz_x = cols_uz
+    rows_uz_y = total_uz .+ cols_uz
+    rows_uz_z = (2 * total_uz) .+ cols_uz
+
+    total_grad_rows = size(op_p.G, 1)
+    rows_per_time = div(total_grad_rows, nt_p)
+    rows_per_time >= nu_x + nu_y + nu_z || error("Pressure gradient rows per time ($rows_per_time) must be >= velocity DOFs ($(nu_x + nu_y + nu_z)) in 3D moving Stokes.")
+    rows_block = time_block_indices(rows_per_time, nt_p)
+    rows_p_x = rows_block[1:nu_x]
+    rows_p_y = rows_block[nu_x+1:nu_x+nu_y]
+    rows_p_z = rows_block[nu_x+nu_y+1:nu_x+nu_y+nu_z]
     
-    W_uy = ops_u[2].Wꜝ[1:end÷2, 1:end÷2]
-    G_uy = ops_u[2].G[1:end÷2, 1:end÷2]
-    H_uy = ops_u[2].H[1:end÷2, 1:end÷2]
-    V_uy = ops_u[2].V[1:end÷2, 1:end÷2]
+    W_ux = blockdiag(ops_u[1].Wꜝ[rows_ux_x, rows_ux_x],
+                     ops_u[1].Wꜝ[rows_ux_y, rows_ux_y],
+                     ops_u[1].Wꜝ[rows_ux_z, rows_ux_z])
+    G_ux = vcat(ops_u[1].G[rows_ux_x, cols_ux],
+                ops_u[1].G[rows_ux_y, cols_ux],
+                ops_u[1].G[rows_ux_z, cols_ux])
+    H_ux = vcat(ops_u[1].H[rows_ux_x, cols_ux],
+                ops_u[1].H[rows_ux_y, cols_ux],
+                ops_u[1].H[rows_ux_z, cols_ux])
+    V_ux = ops_u[1].V[cols_ux, cols_ux]
     
-    W_uz = ops_u[3].Wꜝ[1:end÷2, 1:end÷2]
-    G_uz = ops_u[3].G[1:end÷2, 1:end÷2]
-    H_uz = ops_u[3].H[1:end÷2, 1:end÷2]
-    V_uz = ops_u[3].V[1:end÷2, 1:end÷2]
+    W_uy = blockdiag(ops_u[2].Wꜝ[rows_uy_x, rows_uy_x],
+                     ops_u[2].Wꜝ[rows_uy_y, rows_uy_y],
+                     ops_u[2].Wꜝ[rows_uy_z, rows_uy_z])
+    G_uy = vcat(ops_u[2].G[rows_uy_x, cols_uy],
+                ops_u[2].G[rows_uy_y, cols_uy],
+                ops_u[2].G[rows_uy_z, cols_uy])
+    H_uy = vcat(ops_u[2].H[rows_uy_x, cols_uy],
+                ops_u[2].H[rows_uy_y, cols_uy],
+                ops_u[2].H[rows_uy_z, cols_uy])
+    V_uy = ops_u[2].V[cols_uy, cols_uy]
     
-    # Pressure operators (space-time)
-    G_p_full = op_p.G[1:end÷2, 1:end÷2]
-    H_p_full = op_p.H[1:end÷2, 1:end÷2]
+    W_uz = blockdiag(ops_u[3].Wꜝ[rows_uz_x, rows_uz_x],
+                     ops_u[3].Wꜝ[rows_uz_y, rows_uz_y],
+                     ops_u[3].Wꜝ[rows_uz_z, rows_uz_z])
+    G_uz = vcat(ops_u[3].G[rows_uz_x, cols_uz],
+                ops_u[3].G[rows_uz_y, cols_uz],
+                ops_u[3].G[rows_uz_z, cols_uz])
+    H_uz = vcat(ops_u[3].H[rows_uz_x, cols_uz],
+                ops_u[3].H[rows_uz_y, cols_uz],
+                ops_u[3].H[rows_uz_z, cols_uz])
+    V_uz = ops_u[3].V[cols_uz, cols_uz]
+    
+    # Pressure operators (space-time) on the t^{n+1} slice
+    G_p_full_x = op_p.G[rows_p_x, cols_p]
+    H_p_full_x = op_p.H[rows_p_x, cols_p]
+    G_p_full_y = op_p.G[rows_p_y, cols_p]
+    H_p_full_y = op_p.H[rows_p_y, cols_p]
+    G_p_full_z = op_p.G[rows_p_z, cols_p]
+    H_p_full_z = op_p.H[rows_p_z, cols_p]
     
     # Build viscosity operators
     μ = fluid.μ
     Iμ_ux = build_I_D(ops_u[1], μ, caps_u[1])
     Iμ_uy = build_I_D(ops_u[2], μ, caps_u[2])
     Iμ_uz = build_I_D(ops_u[3], μ, caps_u[3])
-    Iμ_ux = Iμ_ux[1:end÷2, 1:end÷2]
-    Iμ_uy = Iμ_uy[1:end÷2, 1:end÷2]
-    Iμ_uz = Iμ_uz[1:end÷2, 1:end÷2]
+    Iμ_ux = Iμ_ux[cols_ux, cols_ux]
+    Iμ_uy = Iμ_uy[cols_uy, cols_uy]
+    Iμ_uz = Iμ_uz[cols_uz, cols_uz]
     
     # Viscous blocks
     visc_x_ω = Iμ_ux * G_ux' * W_ux * G_ux
@@ -454,49 +511,33 @@ function stokes3D_moving_blocks(fluid::Fluid{3},
     visc_z_γ = Iμ_uz * G_uz' * W_uz * H_uz
     
     # Pressure gradient (need to extract x, y, and z rows)
-    grad_full = G_p_full + H_p_full
-    total_grad_rows = size(grad_full, 1)
-    
-    # For staggered grids, grad should map pressure to velocity DOFs
-    x_rows = 1:nu_x
-    y_rows = nu_x+1:nu_x+nu_y
-    z_rows = nu_x+nu_y+1:nu_x+nu_y+nu_z
-    
-    if total_grad_rows >= nu_x + nu_y + nu_z
-        grad_x = -grad_full[x_rows, :]
-        grad_y = -grad_full[y_rows, :]
-        grad_z = -grad_full[z_rows, :]
-    else
-        error("Pressure gradient operator has unexpected dimensions: expected $(nu_x + nu_y + nu_z) rows, got $(total_grad_rows)")
-    end
+    grad_x = -(G_p_full_x + H_p_full_x)
+    grad_y = -(G_p_full_y + H_p_full_y)
+    grad_z = -(G_p_full_z + H_p_full_z)
     
     # Divergence operators
-    Gp_x = G_p_full[x_rows, :]
-    Hp_x = H_p_full[x_rows, :]
-    Gp_y = G_p_full[y_rows, :]
-    Hp_y = H_p_full[y_rows, :]
-    Gp_z = G_p_full[z_rows, :]
-    Hp_z = H_p_full[z_rows, :]
+    Gp_x = G_p_full_x
+    Hp_x = H_p_full_x
+    Gp_y = G_p_full_y
+    Hp_y = H_p_full_y
+    Gp_z = G_p_full_z
+    Hp_z = H_p_full_z
     
-    if total_grad_rows >= nu_x + nu_y + nu_z
-        div_x_ω = -(Gp_x' + Hp_x')
-        div_x_γ = Hp_x'
-        div_y_ω = -(Gp_y' + Hp_y')
-        div_y_γ = Hp_y'
-        div_z_ω = -(Gp_z' + Hp_z')
-        div_z_γ = Hp_z'
-    else
-        error("Divergence operator has unexpected dimensions: expected $(nu_x + nu_y + nu_z) rows, got $(total_grad_rows)")
-    end
+    div_x_ω = -(Gp_x' + Hp_x')
+    div_x_γ = Hp_x'
+    div_y_ω = -(Gp_y' + Hp_y')
+    div_y_γ = Hp_y'
+    div_z_ω = -(Gp_z' + Hp_z')
+    div_z_γ = Hp_z'
     
     # Mass matrices for density
     ρ = fluid.ρ
     mass_x = build_I_D(ops_u[1], ρ, caps_u[1])
     mass_y = build_I_D(ops_u[2], ρ, caps_u[2])
     mass_z = build_I_D(ops_u[3], ρ, caps_u[3])
-    mass_x = mass_x[1:end÷2, 1:end÷2] * V_ux
-    mass_y = mass_y[1:end÷2, 1:end÷2] * V_uy
-    mass_z = mass_z[1:end÷2, 1:end÷2] * V_uz
+    mass_x = mass_x[cols_ux, cols_ux] * V_ux
+    mass_y = mass_y[cols_uy, cols_uy] * V_uy
+    mass_z = mass_z[cols_uz, cols_uz] * V_uz
     
     return (; nu_x, nu_y, nu_z, np,
             op_ux=ops_u[1], op_uy=ops_u[2], op_uz=ops_u[3], op_p,
