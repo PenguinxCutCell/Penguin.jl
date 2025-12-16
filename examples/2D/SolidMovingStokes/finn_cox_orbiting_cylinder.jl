@@ -169,7 +169,7 @@ end
 # -----------------
 p = FinnCoxParams()
 
-nx = ny = 32
+nx = ny = 64
 L = 2.4
 x0 = y0 = -0.5 * L
 
