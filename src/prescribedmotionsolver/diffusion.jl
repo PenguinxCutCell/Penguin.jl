@@ -108,10 +108,12 @@ function A_mono_unstead_diff_moving(operator::DiffusionOps, capacity::Capacity, 
     #  => 4 for 3D: capacity.A[4]
     cap_index = len_dims
     
+    # Vn_1 stands for V at time n+1 (to be solved for)
+    # Vn   stands for V at time n (known)
     Vn_1 = capacity.A[cap_index][1:end÷2, 1:end÷2]
     Vn   = capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
 
-    # Select time integration weighting
+    # Select time integration weighting : For fresh/dead cells handling
     if scheme == "CN"
         psip, psim = psip_cn, psim_cn
     else
@@ -141,6 +143,7 @@ function A_mono_unstead_diff_moving(operator::DiffusionOps, capacity::Capacity, 
         error("A_mono_unstead_diff_moving_generic not supported for dimension $(len_dims).")
     end
 
+    # VERY IMPORTANT : Extract operator sub-blocks
     W! = operator.Wꜝ[1:end÷2, 1:end÷2]
     G  = operator.G[1:end÷2, 1:end÷2]
     H  = operator.H[1:end÷2, 1:end÷2]

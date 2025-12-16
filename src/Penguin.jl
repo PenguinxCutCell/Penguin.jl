@@ -146,6 +146,10 @@ export NavierStokesMono, solve_NavierStokesMono_unsteady!, solve_NavierStokesMon
 export compute_navierstokes_force_diagnostics, navierstokes_reaction_force_components
 export drag_lift_coefficients, pressure_trace_on_cut
 
+include("prescribedmotionsolver/navierstokes.jl")
+export MovingNavierStokesUnsteadyMono, solve_MovingNavierStokesUnsteadyMono!, compute_moving_navierstokes_force_2D
+export MovingNavierStokesFSI2D, solve_MovingNavierStokesFSI2D!
+
 include("solver/navierstokes_scalar_coupling.jl")
 export CouplingStrategy, PassiveCoupling, PicardCoupling, MonolithicCoupling
 export NavierStokesScalarCoupler, step!, solve_NavierStokesScalarCoupling!, solve_NavierStokesScalarCoupling_steady!,

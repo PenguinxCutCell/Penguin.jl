@@ -10,7 +10,7 @@ using IterativeSolvers
 ############
 # Geometry and body definition
 ############
-nx, ny = 96, 48
+nx, ny = 35, 35
 Lx, Ly = 8.0, 2.0
 x0, y0 = -Lx / 2, -Ly / 2
 
@@ -31,9 +31,9 @@ mesh_uy = Penguin.Mesh((nx, ny), (Lx, Ly), (x0, y0 - 0.5 * dy))
 ############
 # Capacities/operators at t=0 (particle at center0)
 ############
-capacity_ux = Capacity((x, y, _=0.0) -> body_shape(x, y, center0), mesh_ux)
-capacity_uy = Capacity((x, y, _=0.0) -> body_shape(x, y, center0), mesh_uy)
-capacity_p = Capacity((x, y, _=0.0) -> body_shape(x, y, center0), mesh_p)
+capacity_ux = Capacity((x, y, _=0.0) -> body_shape(x, y, center0), mesh_ux; method="VOFI", integration_method=:vofijul)
+capacity_uy = Capacity((x, y, _=0.0) -> body_shape(x, y, center0), mesh_uy; method="VOFI", integration_method=:vofijul)
+capacity_p = Capacity((x, y, _=0.0) -> body_shape(x, y, center0), mesh_p; method="VOFI", integration_method=:vofijul)
 
 operator_ux = DiffusionOps(capacity_ux)
 operator_uy = DiffusionOps(capacity_uy)
@@ -101,6 +101,7 @@ stokes_solver = MovingStokesUnsteadyMono(fluid, (bc_ux, bc_uy), pressure_gauge, 
 mass = 2.0
 fsi = MovingStokesFSI2D(stokes_solver, body_shape, mass, center0, velocity0)
 
+U_in = 1.0
 println("Running particle-in-uniform-flow case:")
 println("  U_in=$(U_in), radius=$(radius), mass=$(mass), dt=$(dt), T_end=$(T_end)")
 
