@@ -6,7 +6,7 @@ using CairoMakie
 
 ### 2D Test Case : Monophasic Steady Diffusion Equation inside a Disk
 # Define the mesh
-nx, ny = 160, 160
+nx, ny = 512, 512
 lx, ly = 4., 4.
 x0, y0 = 0., 0.
 domain = ((x0, lx), (y0, ly))
@@ -18,6 +18,13 @@ circle = (x, y, _=0) -> (sqrt((x-center[1])^2 + (y-center[2])^2) - radius)
 
 # Define the capacity
 capacity = Capacity(circle, mesh)
+
+# Count cells whose volume is less than 1e-3 of a full cell
+cell_volumes = capacity.V[diagind(capacity.V)]
+full_cell_vol = (lx/nx) * (ly/ny)
+tiny_mask = cell_volumes .< (1e-3 * full_cell_vol)
+println("Cells with relative volume < 1e-3: $(count(tiny_mask))")
+println("Total volume of these cells: $(sum(cell_volumes[tiny_mask]))")
 
 # Define the operators
 operator = DiffusionOps(capacity)
@@ -62,13 +69,13 @@ u_num = reshape(u_num, (nx+1, ny+1))
 err = u_ana .- u_num
 
 using CairoMakie
+x,y = mesh.nodes[1], mesh.nodes[2]
 fig = Figure()
-ax1 = Axis(fig[1, 1], xlabel = "x", ylabel="y", title="Analytical solution")
-ax2 = Axis(fig[1, 2], xlabel = "x", ylabel="y", title="Numerical solution")
-heatmap!(ax1, u_ana, colormap=:viridis)
-heatmap!(ax2, u_num, colormap=:viridis)
-Colorbar(fig[1, 3], label="u(x)")
+ax1 = Axis(fig[1, 1], xlabel = "x", ylabel="y", title="Numerical solution")
+hm =heatmap!(ax1, x, y, u_num, colormap=:viridis)
+Colorbar(fig[1, 2], hm, label="Value")
 display(fig)
+save("numerical_solution.png", fig)
 
 # Plot error heatmap
 err = reshape(err, (nx+1, ny+1))
@@ -78,10 +85,43 @@ x,y = mesh.nodes[1], mesh.nodes[2]
 xlims!(ax, 2, 3.25)
 ylims!(ax, 2, 3.25)
 hm = heatmap!(ax, x,y,log10.(abs.(err)), colormap=:viridis)
-Colorbar(fig[1, 2], hm, label="log10(Err_rel)")
+Colorbar(fig[1, 2], hm, label="Log10 Error")
 display(fig)
+save("error_heatmap.png", fig)
 
-readline()
+# Plot interface value 
+ϕγ = solver.x[end÷2+1:end]
+ϕγ = reshape(ϕγ, (nx+1, ny+1))
+ϕγ[capacity.cell_types .!= -1] .= NaN
+using CairoMakie
+fig = Figure()
+ax = Axis(fig[1, 1], xlabel = "x", ylabel="y", title="Value along the interface")
+hm = heatmap!(ax, x,y, ϕγ, colormap=:viridis)
+Colorbar(fig[1, 2], hm, label="u(interface)")
+display(fig)
+save("interface_values.png", fig)
+
+# Plot interface value against polar angle (degrees)
+# Use cell centroids of cut cells to avoid zeroed interface centroids
+ϕγ_vec = solver.x[end÷2+1:end]
+idx_cut = findall(capacity.cell_types .== -1)
+centroids_cut = capacity.C_ω[idx_cut]
+xγ = getindex.(centroids_cut, 1)
+yγ = getindex.(centroids_cut, 2)
+θ = rad2deg.(atan.(yγ .- center[2], xγ .- center[1]))
+θ = map(t -> t < 0 ? t + 360.0 : t, θ)
+ϕγ_cut = ϕγ_vec[idx_cut]
+order = sortperm(θ)
+θ = θ[order]
+ϕγ_cut = ϕγ_cut[order]
+fig = Figure()
+ax = Axis(fig[1, 1], xlabel = "θ (deg)", ylabel="uγ", title="Interface value vs angle")
+scatter!(ax, θ, ϕγ_cut; markersize=5, label="Numerical")
+lines!(ax, θ, ones(length(θ)) * (7/4 - radius^2/4); color=:red, linestyle=:dash, label="Analytical")
+xlims!(ax, 0, 360)
+axislegend(ax, position=:rt)
+display(fig)
+save("interface_values_theta_deg.png", fig)
 
 # Gradient error
 ∇_num = ∇(operator, solver.x)

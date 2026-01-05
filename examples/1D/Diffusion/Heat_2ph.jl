@@ -39,7 +39,7 @@ bc1 = Dirichlet(0.0)
 bc0 = Dirichlet(1.0)
 bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:top => bc0, :bottom => bc1))
 
-ic = InterfaceConditions(ScalarJump(1.0, 1.0, 0.0), FluxJump(1.0, 1.0, 0.0))
+ic = InterfaceConditions(ScalarJump(1.0, 2.0, 0.0), FluxJump(1.0, 1.0, 0.0))
 He = 1.0
 # Define the source term
 f1 = (x,y,z,t)->0.0
@@ -95,7 +95,6 @@ scatter!(ax_spy, col_idx,row_idx;
          color      = :black)
 
 display(fig_spy)
-readline()
 
 
 #––– plot the timings as percentages of T_end –––
@@ -167,7 +166,7 @@ display(fig)
 
 # Analytical solution
 using SpecialFunctions
-He=1.0
+He=2.0
 D1, D2 = 1.0, 1.0
 function T1(x)
     t = Tend
@@ -239,7 +238,6 @@ end
 error_fig = visualize_diphasic_errors(x, ana_sols, num_sols, capacity, capacity_c)
 
 
-readline()
 
 # Compute Sherwood number : 1) compute average concentration inside and outside the body : ̅cl = 1/V ∫ cl dV, ̅cg = 1/V ∫ cg dV
 # 2) compute the mass transfer rate : k = (cg(n+1) - cg(n))/(Γ * Δt * (He*cg(n+1) - cl(n+1))) with Γ the area of the interface
@@ -294,11 +292,71 @@ function compute_sherwood_all(solver, capacity, capacity_c, Δt, He, L, D)
 end
 
 # Compute Sherwood number
-Sh_val = compute_sherwood_all(solver, capacity, capacity_c, Δt, He, lx, 1.0)
+#Sh_val = compute_sherwood_all(solver, capacity, capacity_c, Δt, He, lx, 1.0)
 
-# Plot Sherwood number
-fig = Figure()
-ax = Axis(fig[1, 1], xlabel="t", ylabel="Sh", title="Sherwood number")
-scatter!(ax,0:Δt:Tend+Δt,Sh_val, color=:blue, label="Sherwood number")
-axislegend(ax, position=:rt)
-display(fig)
+
+#––– Compare numerical/analytical profiles for multiple Henry numbers –––
+He_values = [1.0, 2.0, 10.0, 100.0]
+x_nodes = range(x0, stop = lx, length = nx+1)
+
+function analytic_profile(x, He_val, Tend, xint, D1_val, D2_val)
+    shift = x .- xint
+    pref = -He_val / (1 + He_val * sqrt(D1_val / D2_val))
+    u1 = pref .* (erfc.(shift ./ (2 * sqrt(D1_val * Tend))) .- 2)
+    u2 = pref .* erfc.(shift ./ (2 * sqrt(D2_val * Tend))) .+ 1
+    return u1, u2
+end
+
+function solve_diffusion_for_He(He_val, Δt, Tend)
+    ic_local = InterfaceConditions(ScalarJump(1.0, He_val, 0.0), FluxJump(1.0, 1.0, 0.0))
+    u0_local = vcat(zeros(nx+1), zeros(nx+1), ones(nx+1), ones(nx+1))
+    solver_local = DiffusionUnsteadyDiph(Fluide_1, Fluide_2, bc_b, ic_local, Δt, u0_local, "CN")
+    solve_DiffusionUnsteadyDiph!(
+        solver_local, Fluide_1, Fluide_2,
+        Δt, Tend, bc_b, ic_local, "CN";
+        method = Base.:\ )
+    return solver_local
+end
+
+palette = [:blue, :red, :green, :purple]
+
+fig_multi = Figure(resolution = (1000, 600))
+ax_multi = Axis(fig_multi[1, 1];
+                xlabel = "x",
+                ylabel = "u",
+                title = "Diphasic diffusion: analytical vs numerical for multiple λ")
+
+for (idx, He_val) in enumerate(He_values)
+    color = palette[(idx - 1) % length(palette) + 1]
+    solver_he = solve_diffusion_for_He(He_val, Δt, Tend)
+
+    u1_num = solver_he.states[end][1:nx+1]
+    u2_num = solver_he.states[end][2*(nx+1)+1:3*(nx+1)]
+
+    u1_num[capacity.cell_types .== 0] .= NaN
+    u2_num[capacity_c.cell_types .== 0] .= NaN
+
+    u1_ana, u2_ana = analytic_profile(x_nodes, He_val, Tend, xint, 1.0, 1.0)
+    u1_ana[capacity.cell_types .== 0] .= NaN
+    u2_ana[capacity_c.cell_types .== 0] .= NaN
+
+    lines!(ax_multi, x_nodes, u1_ana;
+           color = color, linestyle = :solid,
+           label = "λ=$(He_val) p1 analytic")
+    scatter!(ax_multi, x_nodes, u1_num;
+             color = color, markersize = 3, marker = :circle,
+             label = "λ=$(He_val) p1 numerical")
+
+    lines!(ax_multi, x_nodes, u2_ana;
+           color = color, linestyle = :dash,
+           label = "λ=$(He_val) p2 analytic")
+    scatter!(ax_multi, x_nodes, u2_num;
+             color = color, markersize = 3, marker = :x,
+             label = "λ=$(He_val) p2 numerical")
+end
+
+vlines!(ax_multi, [xint]; color = :black, linestyle = :dot, linewidth = 2, label = "Interface")
+
+axislegend(ax_multi, position = :rb, nbanks = 2)
+display(fig_multi)
+save("diphasic_diffusion_multiple_λ.png", fig_multi)
