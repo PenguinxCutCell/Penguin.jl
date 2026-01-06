@@ -472,8 +472,8 @@ function assemble_navierstokes1D_unsteady!(s::NavierStokesMono, data, Δt::Float
     uω_prev = view(x_prev, off_uω+1:off_uω+nu)
     uγ_prev = view(x_prev, off_uγ+1:off_uγ+nu)
 
-    f_prev = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_prev)
-    f_next = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_next)
+    f_prev = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_prev, 1)
+    f_next = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_next, 1)
     load = data.V * (θ .* f_next .+ θc .* f_prev)
 
     rhs_mom = mass_dt * Vector{Float64}(uω_prev)
@@ -561,12 +561,12 @@ function assemble_navierstokes2D_unsteady!(s::NavierStokesMono, data, Δt::Float
     uωy_prev = view(x_prev, off_uωy+1:off_uωy+nu_y)
     uγy_prev = view(x_prev, off_uγy+1:off_uγy+nu_y)
 
-    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev)
-    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next)
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev, 1)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next, 1)
     load_x = data.Vx * (θ .* f_next_x .+ θc .* f_prev_x)
 
-    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev)
-    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next)
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev, 2)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next, 2)
     load_y = data.Vy * (θ .* f_next_y .+ θc .* f_prev_y)
 
     rhs_mom_x = mass_x_dt * Vector{Float64}(uωx_prev)
@@ -681,16 +681,16 @@ function assemble_navierstokes3D_unsteady!(s::NavierStokesMono, data, Δt::Float
     uωz_prev = view(x_prev, off_uωz+1:off_uωz+nu_z)
     uγz_prev = view(x_prev, off_uγz+1:off_uγz+nu_z)
 
-    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev)
-    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next)
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev, 1)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next, 1)
     load_x = data.Vx * (θ .* f_next_x .+ θc .* f_prev_x)
 
-    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev)
-    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next)
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev, 2)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next, 2)
     load_y = data.Vy * (θ .* f_next_y .+ θc .* f_prev_y)
 
-    f_prev_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_prev)
-    f_next_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_next)
+    f_prev_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_prev, 3)
+    f_next_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_next, 3)
     load_z = data.Vz * (θ .* f_next_z .+ θc .* f_prev_z)
 
     rhs_mom_x = mass_x_dt * Vector{Float64}(uωx_prev)
@@ -797,8 +797,8 @@ function assemble_navierstokes1D_unsteady_picard!(s::NavierStokesMono, data, Δt
     uω_prev = view(x_prev, off_uω+1:off_uω+nu)
     uγ_prev = view(x_prev, off_uγ+1:off_uγ+nu)
 
-    f_prev = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_prev)
-    f_next = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_next)
+    f_prev = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_prev, 1)
+    f_next = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_next, 1)
     load = data.V * (θ .* f_next .+ θc .* f_prev)
 
     rhs_mom = mass_dt * Vector{Float64}(uω_prev)
@@ -887,12 +887,12 @@ function assemble_navierstokes2D_unsteady_picard!(s::NavierStokesMono, data, Δt
     uωy_prev = view(x_prev, off_uωy+1:off_uωy+nu_y)
     uγy_prev = view(x_prev, off_uγy+1:off_uγy+nu_y)
 
-    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev)
-    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next)
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev, 1)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next, 1)
     load_x = data.Vx * (θ .* f_next_x .+ θc .* f_prev_x)
 
-    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev)
-    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next)
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev, 2)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next, 2)
     load_y = data.Vy * (θ .* f_next_y .+ θc .* f_prev_y)
 
     rhs_mom_x = mass_x_dt * Vector{Float64}(uωx_prev)
@@ -1010,16 +1010,16 @@ function assemble_navierstokes3D_unsteady_picard!(s::NavierStokesMono, data, Δt
     uωz_prev = view(x_prev, off_uωz+1:off_uωz+nu_z)
     uγz_prev = view(x_prev, off_uγz+1:off_uγz+nu_z)
 
-    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev)
-    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next)
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev, 1)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next, 1)
     load_x = data.Vx * (θ .* f_next_x .+ θc .* f_prev_x)
 
-    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev)
-    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next)
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev, 2)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next, 2)
     load_y = data.Vy * (θ .* f_next_y .+ θc .* f_prev_y)
 
-    f_prev_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_prev)
-    f_next_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_next)
+    f_prev_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_prev, 3)
+    f_next_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_next, 3)
     load_z = data.Vz * (θ .* f_next_z .+ θc .* f_prev_z)
 
     rhs_mom_x = mass_x_dt * Vector{Float64}(uωx_prev)
@@ -1101,7 +1101,7 @@ function assemble_navierstokes1D_steady_picard!(s::NavierStokesMono,
     A[con_rows, off_uω+1:off_uω+nu] = data.div_u_ω
     A[con_rows, off_uγ+1:off_uγ+nu] = data.div_u_γ
 
-    f = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, nothing)
+    f = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, nothing, 1)
     load = data.V * f
 
     g_cut = safe_build_g(data.op_u, s.bc_cut, data.cap_u, nothing)
@@ -1175,8 +1175,8 @@ function assemble_navierstokes2D_steady_picard!(s::NavierStokesMono,
     A[con_rows, off_uγy+1:off_uγy+nu_y] = data.div_y_γ
 
     # Forcing (steady)
-    f_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing)
-    f_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing)
+    f_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing, 1)
+    f_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing, 2)
     load_x = data.Vx * f_x
     load_y = data.Vy * f_y
 
@@ -1263,9 +1263,9 @@ function assemble_navierstokes3D_steady_picard!(s::NavierStokesMono,
     A[con_rows, off_uωz+1:off_uωz+nu_z] = data.div_z_ω
     A[con_rows, off_uγz+1:off_uγz+nu_z] = data.div_z_γ
 
-    f_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing)
-    f_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing)
-    f_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, nothing)
+    f_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing, 1)
+    f_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing, 2)
+    f_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, nothing, 3)
     load_x = data.Vx * f_x
     load_y = data.Vy * f_y
     load_z = data.Vz * f_z
@@ -2125,7 +2125,7 @@ function compute_navierstokes1D_residual!(s::NavierStokesMono, data, x_state::Ab
     ρ = s.fluid.ρ
     ρ_val = ρ isa Function ? 1.0 : ρ
 
-    f = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, nothing)
+    f = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, nothing, 1)
     load = data.V * f
 
     uω_vec = Vector{Float64}(uω)
@@ -2211,8 +2211,8 @@ function compute_navierstokes2D_residual!(s::NavierStokesMono, data, x_state::Ab
     ρ_val = ρ isa Function ? 1.0 : ρ
     
     # Forcing terms
-    f_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing)
-    f_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing)
+    f_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing, 1)
+    f_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing, 2)
     load_x = data.Vx * f_x
     load_y = data.Vy * f_y
     
@@ -2331,9 +2331,9 @@ function compute_navierstokes3D_residual!(s::NavierStokesMono, data, x_state::Ab
     ρ = s.fluid.ρ
     ρ_val = ρ isa Function ? 1.0 : ρ
 
-    f_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing)
-    f_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing)
-    f_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, nothing)
+    f_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing, 1)
+    f_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing, 2)
+    f_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, nothing, 3)
     load_x = data.Vx * f_x
     load_y = data.Vy * f_y
     load_z = data.Vz * f_z

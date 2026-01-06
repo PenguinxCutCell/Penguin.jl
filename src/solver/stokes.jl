@@ -36,15 +36,27 @@ mutable struct StokesMono{N}
     ch::Vector{Any}
 end
 
-@inline function safe_build_source(op::AbstractOperators, f::Function, cap::Capacity, t::Union{Nothing,Float64})
+@inline function _component_force_fn(f::Function, component::Union{Nothing,Int})
+    return f
+end
+
+@inline function _component_force_fn(f::Union{Tuple, AbstractVector{<:Function}}, component::Union{Nothing,Int})
+    component === nothing && error("Component index is required when fᵤ is provided per component.")
+    1 <= component <= length(f) || error("Component index $(component) out of bounds for force tuple of length $(length(f)).")
+    return f[component]
+end
+
+@inline function safe_build_source(op::AbstractOperators, f, cap::Capacity,
+                                   t::Union{Nothing,Float64}, component::Union{Nothing,Int}=nothing)
+    f_comp = _component_force_fn(f, component)
     if t === nothing
-        return build_source(op, f, cap)
+        return build_source(op, f_comp, cap)
     end
     try
-        return build_source(op, f, t, cap)
+        return build_source(op, f_comp, t, cap)
     catch err
         if err isa MethodError
-            return build_source(op, f, cap)
+            return build_source(op, f_comp, cap)
         else
             rethrow(err)
         end
@@ -362,7 +374,7 @@ function assemble_stokes1D!(s::StokesMono)
     A[2nu+1:3nu, 1:nu]     = data.div_uω
     A[2nu+1:3nu, nu+1:2nu] = data.div_uγ
 
-    f_vec = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, nothing)
+    f_vec = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, nothing, 1)
     b_mom = data.V * f_vec
     g_cut = safe_build_g(data.op_u, s.bc_cut, data.cap_u, nothing)
     b_con = zeros(np)
@@ -431,8 +443,8 @@ function assemble_stokes2D!(s::StokesMono)
     A[con_rows, off_uωy+1:off_uωy+nu_y] = data.div_y_ω
     A[con_rows, off_uγy+1:off_uγy+nu_y] = data.div_y_γ
 
-    fₒx = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing)
-    fₒy = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing)
+    fₒx = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing, 1)
+    fₒy = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing, 2)
     b_mom_x = data.Vx * fₒx
     b_mom_y = data.Vy * fₒy
     g_cut_x = safe_build_g(data.op_ux, s.bc_cut, data.cap_px, nothing)
@@ -523,9 +535,9 @@ function assemble_stokes3D!(s::StokesMono)
     A[con_rows, off_uωz+1:off_uωz+nu_z] = data.div_z_ω
     A[con_rows, off_uγz+1:off_uγz+nu_z] = data.div_z_γ
 
-    fₒx = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing)
-    fₒy = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing)
-    fₒz = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, nothing)
+    fₒx = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, nothing, 1)
+    fₒy = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, nothing, 2)
+    fₒz = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, nothing, 3)
     b_mom_x = data.Vx * fₒx
     b_mom_y = data.Vy * fₒy
     b_mom_z = data.Vz * fₒz
@@ -595,8 +607,8 @@ function assemble_stokes1D_unsteady!(s::StokesMono, data, Δt::Float64,
     u_prev_ω = view(x_prev, 1:nu)
     u_prev_γ = view(x_prev, nu+1:2nu)
 
-    f_prev = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_prev)
-    f_next = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_next)
+    f_prev = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_prev, 1)
+    f_next = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_next, 1)
     load = data.V * (θ .* f_next .+ θc .* f_prev)
 
     rhs_mom = mass_dt * u_prev_ω
@@ -675,12 +687,12 @@ function assemble_stokes2D_unsteady!(s::StokesMono, data, Δt::Float64,
     uωy_prev = view(x_prev, off_uωy+1:off_uωy+nu_y)
     uγy_prev = view(x_prev, off_uγy+1:off_uγy+nu_y)
 
-    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev)
-    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next)
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev, 1)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next, 1)
     load_x = data.Vx * (θ .* f_next_x .+ θc .* f_prev_x)
 
-    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev)
-    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next)
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev, 2)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next, 2)
     load_y = data.Vy * (θ .* f_next_y .+ θc .* f_prev_y)
 
     rhs_mom_x = mass_x_dt * uωx_prev
@@ -789,16 +801,16 @@ function assemble_stokes3D_unsteady!(s::StokesMono, data, Δt::Float64,
     uωz_prev = view(x_prev, off_uωz+1:off_uωz+nu_z)
     uγz_prev = view(x_prev, off_uγz+1:off_uγz+nu_z)
 
-    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev)
-    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next)
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev, 1)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next, 1)
     load_x = data.Vx * (θ .* f_next_x .+ θc .* f_prev_x)
 
-    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev)
-    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next)
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev, 2)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next, 2)
     load_y = data.Vy * (θ .* f_next_y .+ θc .* f_prev_y)
 
-    f_prev_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_prev)
-    f_next_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_next)
+    f_prev_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_prev, 3)
+    f_next_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_next, 3)
     load_z = data.Vz * (θ .* f_next_z .+ θc .* f_prev_z)
 
     rhs_mom_x = mass_x_dt * uωx_prev

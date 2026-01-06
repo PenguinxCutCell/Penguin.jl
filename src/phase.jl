@@ -32,7 +32,8 @@ material data for (incompressible) Stokes/Navier–Stokes formulations.
 - `operator_p::AbstractOperators`: Operators for the pressure field
 - `μ::Union{Float64, Function}`: Dynamic viscosity (constant or function of space)
 - `ρ::Union{Float64, Function}`: Density (constant or function of space)
-- `fᵤ::Function`: Body force source term in momentum equation
+- `fᵤ::Union{Function, NTuple{N,Function}}`: Body force source term in momentum equation
+  (either one function shared by all components or one per component)
 - `fₚ::Function`: Mass source in continuity equation
 """
 struct Fluid{N}
@@ -44,7 +45,7 @@ struct Fluid{N}
     operator_p::AbstractOperators
     μ::Union{Float64, Function}
     ρ::Union{Float64, Function}
-    fᵤ::Function
+    fᵤ::Union{Function, NTuple{N,Function}}
     fₚ::Function
 end
 

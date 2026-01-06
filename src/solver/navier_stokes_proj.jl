@@ -417,12 +417,12 @@ function _assemble_predictor_2D(s::NavierStokesProjectionMono, data, Δt::Float6
     uωy_prev = view(x_prev, off_uωy+1:off_uωy+nu_y)
     uγy_prev = view(x_prev, off_uγy+1:off_uγy+nu_y)
 
-    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev)
-    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next)
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev, 1)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next, 1)
     load_x = data.Vx * (θ .* f_next_x .+ θc .* f_prev_x)
 
-    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev)
-    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next)
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev, 2)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next, 2)
     load_y = data.Vy * (θ .* f_next_y .+ θc .* f_prev_y)
 
     conv_curr = compute_convection_vectors!(s, data, x_prev)

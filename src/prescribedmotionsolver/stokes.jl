@@ -358,14 +358,14 @@ function assemble_stokes2D_moving!(s::MovingStokesUnsteadyMono{2}, data, Δt::Fl
     uγy_prev = view(x_prev, off_uγy+1:off_uγy+nu_y)
 
     # Build source terms
-    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_ux, t_prev)
-    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_ux, t_next)
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_ux, t_prev, 1)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_ux, t_next, 1)
     f_prev_x = f_prev_x[1:end÷2]
     f_next_x = f_next_x[1:end÷2]
     load_x = data.Vx * (θ .* f_next_x .+ θc .* f_prev_x)
 
-    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_uy, t_prev)
-    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_uy, t_next)
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_uy, t_prev, 2)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_uy, t_next, 2)
     f_prev_y = f_prev_y[1:end÷2]
     f_next_y = f_next_y[1:end÷2]
     load_y = data.Vy * (θ .* f_next_y .+ θc .* f_prev_y)

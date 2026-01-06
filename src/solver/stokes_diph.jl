@@ -379,10 +379,10 @@ function assemble_stokes2D_diph!(s::StokesDiph)
     h_flux_x = build_g_g(data_a.op_ux, flux_x, data_a.cap_px)
     h_flux_y = build_g_g(data_a.op_uy, flux_y, data_a.cap_py)
 
-    f₁x = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, nothing)
-    f₁y = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, nothing)
-    f₂x = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, nothing)
-    f₂y = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, nothing)
+    f₁x = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, nothing, 1)
+    f₁y = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, nothing, 2)
+    f₂x = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, nothing, 1)
+    f₂y = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, nothing, 2)
 
     b_mom_ax = data_a.Vx * f₁x
     b_mom_ay = data_a.Vy * f₁y
@@ -575,12 +575,12 @@ function assemble_stokes3D_diph!(s::StokesDiph)
     h_flux_y = flux_y === nothing ? zeros(n_ty) : build_g_g(data_a.op_uy, flux_y, data_a.cap_py)
     h_flux_z = flux_z === nothing ? zeros(n_tz) : build_g_g(data_a.op_uz, flux_z, data_a.cap_pz)
 
-    f₁x = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, nothing)
-    f₁y = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, nothing)
-    f₁z = safe_build_source(data_a.op_uz, s.fluid_a.fᵤ, data_a.cap_pz, nothing)
-    f₂x = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, nothing)
-    f₂y = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, nothing)
-    f₂z = safe_build_source(data_b.op_uz, s.fluid_b.fᵤ, data_b.cap_pz, nothing)
+    f₁x = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, nothing, 1)
+    f₁y = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, nothing, 2)
+    f₁z = safe_build_source(data_a.op_uz, s.fluid_a.fᵤ, data_a.cap_pz, nothing, 3)
+    f₂x = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, nothing, 1)
+    f₂y = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, nothing, 2)
+    f₂z = safe_build_source(data_b.op_uz, s.fluid_b.fᵤ, data_b.cap_pz, nothing, 3)
 
     b_mom_ax = data_a.Vx * f₁x
     b_mom_ay = data_a.Vy * f₁y
@@ -703,8 +703,8 @@ function assemble_stokes1D_diph!(s::StokesDiph)
     g_jump_x = jump_x === nothing ? zeros(nu) : build_g_g(data_a.op_ux, jump_x, data_a.cap_px)
     h_flux_x = flux_x === nothing ? zeros(n_tx) : build_g_g(data_a.op_ux, flux_x, data_a.cap_px)
 
-    f₁x = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, nothing)
-    f₂x = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, nothing)
+    f₁x = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, nothing, 1)
+    f₂x = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, nothing, 1)
     b_mom_ax = data_a.Vx * f₁x
     b_mom_bx = data_b.Vx * f₂x
 
@@ -953,20 +953,20 @@ function assemble_unsteady_stokes2D_diph!(s::StokesDiph,
     u2ωy_prev = view(x_prev, off_b_uωy+1:off_b_uωy+nu_by)
     u2γy_prev = view(x_prev, off_b_uγy+1:off_b_uγy+nu_by)
 
-    f₁x_prev = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_prev)
-    f₁x_next = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_next)
+    f₁x_prev = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_prev, 1)
+    f₁x_next = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_next, 1)
     load_ax = data_a.Vx * (θ .* f₁x_next .+ θc .* f₁x_prev)
 
-    f₁y_prev = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, t_prev)
-    f₁y_next = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, t_next)
+    f₁y_prev = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, t_prev, 2)
+    f₁y_next = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, t_next, 2)
     load_ay = data_a.Vy * (θ .* f₁y_next .+ θc .* f₁y_prev)
 
-    f₂x_prev = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_prev)
-    f₂x_next = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_next)
+    f₂x_prev = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_prev, 1)
+    f₂x_next = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_next, 1)
     load_bx = data_b.Vx * (θ .* f₂x_next .+ θc .* f₂x_prev)
 
-    f₂y_prev = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, t_prev)
-    f₂y_next = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, t_next)
+    f₂y_prev = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, t_prev, 2)
+    f₂y_next = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, t_next, 2)
     load_by = data_b.Vy * (θ .* f₂y_next .+ θc .* f₂y_prev)
 
     rhs_mom_ax = mass_ax_dt * u1ωx_prev
@@ -1103,12 +1103,12 @@ function assemble_unsteady_stokes1D_diph!(s::StokesDiph,
     u2ωx_prev = view(x_prev, off_b_uωx+1:off_b_uωx+nu)
     u2γx_prev = view(x_prev, off_b_uγx+1:off_b_uγx+nu)
 
-    f₁x_prev = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_prev)
-    f₁x_next = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_next)
+    f₁x_prev = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_prev, 1)
+    f₁x_next = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_next, 1)
     load_ax = data_a.Vx * (θ .* f₁x_next .+ θc .* f₁x_prev)
 
-    f₂x_prev = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_prev)
-    f₂x_next = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_next)
+    f₂x_prev = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_prev, 1)
+    f₂x_next = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_next, 1)
     load_bx = data_b.Vx * (θ .* f₂x_next .+ θc .* f₂x_prev)
 
     rhs_mom_ax = mass_ax_dt * u1ωx_prev
@@ -1312,28 +1312,28 @@ function assemble_unsteady_stokes3D_diph!(s::StokesDiph,
     u2ωz_prev = view(x_prev, off_b_uωz+1:off_b_uωz+nu_bz)
     u2γz_prev = view(x_prev, off_b_uγz+1:off_b_uγz+nu_bz)
 
-    f₁x_prev = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_prev)
-    f₁x_next = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_next)
+    f₁x_prev = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_prev, 1)
+    f₁x_next = safe_build_source(data_a.op_ux, s.fluid_a.fᵤ, data_a.cap_px, t_next, 1)
     load_ax = data_a.Vx * (θ .* f₁x_next .+ θc .* f₁x_prev)
 
-    f₁y_prev = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, t_prev)
-    f₁y_next = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, t_next)
+    f₁y_prev = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, t_prev, 2)
+    f₁y_next = safe_build_source(data_a.op_uy, s.fluid_a.fᵤ, data_a.cap_py, t_next, 2)
     load_ay = data_a.Vy * (θ .* f₁y_next .+ θc .* f₁y_prev)
 
-    f₁z_prev = safe_build_source(data_a.op_uz, s.fluid_a.fᵤ, data_a.cap_pz, t_prev)
-    f₁z_next = safe_build_source(data_a.op_uz, s.fluid_a.fᵤ, data_a.cap_pz, t_next)
+    f₁z_prev = safe_build_source(data_a.op_uz, s.fluid_a.fᵤ, data_a.cap_pz, t_prev, 3)
+    f₁z_next = safe_build_source(data_a.op_uz, s.fluid_a.fᵤ, data_a.cap_pz, t_next, 3)
     load_az = data_a.Vz * (θ .* f₁z_next .+ θc .* f₁z_prev)
 
-    f₂x_prev = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_prev)
-    f₂x_next = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_next)
+    f₂x_prev = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_prev, 1)
+    f₂x_next = safe_build_source(data_b.op_ux, s.fluid_b.fᵤ, data_b.cap_px, t_next, 1)
     load_bx = data_b.Vx * (θ .* f₂x_next .+ θc .* f₂x_prev)
 
-    f₂y_prev = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, t_prev)
-    f₂y_next = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, t_next)
+    f₂y_prev = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, t_prev, 2)
+    f₂y_next = safe_build_source(data_b.op_uy, s.fluid_b.fᵤ, data_b.cap_py, t_next, 2)
     load_by = data_b.Vy * (θ .* f₂y_next .+ θc .* f₂y_prev)
 
-    f₂z_prev = safe_build_source(data_b.op_uz, s.fluid_b.fᵤ, data_b.cap_pz, t_prev)
-    f₂z_next = safe_build_source(data_b.op_uz, s.fluid_b.fᵤ, data_b.cap_pz, t_next)
+    f₂z_prev = safe_build_source(data_b.op_uz, s.fluid_b.fᵤ, data_b.cap_pz, t_prev, 3)
+    f₂z_next = safe_build_source(data_b.op_uz, s.fluid_b.fᵤ, data_b.cap_pz, t_next, 3)
     load_bz = data_b.Vz * (θ .* f₂z_next .+ θc .* f₂z_prev)
 
     rhs_mom_ax = mass_ax_dt * u1ωx_prev
