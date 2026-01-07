@@ -127,7 +127,7 @@ function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true
     else
         C_γ = Vector{SVector{N,Float64}}(undef, 0)
     end
-    C_γ = bary_interface
+    #C_γ = bary_interface
     return A, B, V, W, C_ω, C_γ, Γ, cell_types
 end
 

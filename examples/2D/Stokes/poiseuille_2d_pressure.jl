@@ -67,7 +67,7 @@ u_bc = Dirichlet(0.0)
 ###########
 # Sources and material
 ###########
-fᵤ = (x, y, z=0.0) -> -G
+fᵤ = (x, y, z=0.0) -> G
 fₚ = (x, y, z=0.0) -> 0.0
 ρ = 1.0
 

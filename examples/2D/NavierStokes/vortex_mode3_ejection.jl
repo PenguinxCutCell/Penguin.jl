@@ -129,6 +129,33 @@ end
 ###########
 # Helpers
 ###########
+function unpack_velocity_fields(state, nu_x, nu_y, mesh_ux, mesh_uy)
+    xs_ux, ys_ux = mesh_ux.nodes
+    xs_uy, ys_uy = mesh_uy.nodes
+    uωx = state[1:nu_x]
+    uωy = state[2nu_x + 1:2nu_x + nu_y]
+    Ux = reshape(uωx, (length(xs_ux), length(ys_ux)))
+    Uy = reshape(uωy, (length(xs_uy), length(ys_uy)))
+    return Ux, Uy
+end
+
+function compute_vorticity(Ux, Uy, dx, dy)
+    nx_u, ny_u = size(Ux)
+    omega = zeros(nx_u, ny_u)
+    @inbounds for j in 2:ny_u-1
+        for i in 2:nx_u-1
+            dUy_dx = (Uy[i + 1, j] - Uy[i - 1, j]) / (2 * dx)
+            dUx_dy = (Ux[i, j + 1] - Ux[i, j - 1]) / (2 * dy)
+            omega[i, j] = dUy_dx - dUx_dy
+        end
+    end
+    omega[1, :] .= omega[2, :]
+    omega[end, :] .= omega[end - 1, :]
+    omega[:, 1] .= omega[:, 2]
+    omega[:, end] .= omega[:, end - 1]
+    return omega
+end
+
 ###########
 # Physics and solver
 ###########
@@ -172,7 +199,8 @@ frame_idx = round.(Int, range(1, length(states), length=frames))
 # Precompute global color range for smoother animation
 vort_samples = Float64[]
 for idx in frame_idx
-    omega = circulation_vorticity(fluid, states[idx])
+    Ux, Uy = unpack_velocity_fields(states[idx], nu_x, nu_y, mesh_ux, mesh_uy)
+    omega = compute_vorticity(Ux, Uy, dx, dy)
     append!(vort_samples, omega[:])
 end
 vmax = maximum(abs, vort_samples)
@@ -189,7 +217,8 @@ Colorbar(fig[1, 2], hm, label="ω")
 outfile = "vortex_mode3_vorticity.mp4"
 record(fig, outfile, 1:frames; framerate=12) do f
     idx = frame_idx[f]
-    omega = circulation_vorticity(fluid, states[idx])
+    Ux, Uy = unpack_velocity_fields(states[idx], nu_x, nu_y, mesh_ux, mesh_uy)
+    omega = compute_vorticity(Ux, Uy, dx, dy)
     vort_obs[] = omega
     ax.title = @sprintf("Vorticity, t = %.2f", times[idx])
 end

@@ -660,16 +660,16 @@ function assemble_stokes2D_unsteady!(s::StokesMono, data, Δt::Float64,
     row_con = 2 * sum_nu
 
     # Momentum x-component
-    A[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = mass_x_dt - θ * data.visc_x_ω
-    A[row_uωx+1:row_uωx+nu_x, off_uγx+1:off_uγx+nu_x] = -θ * data.visc_x_γ
+    A[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = mass_x_dt + θ * data.visc_x_ω
+    A[row_uωx+1:row_uωx+nu_x, off_uγx+1:off_uγx+nu_x] = +θ * data.visc_x_γ
     A[row_uωx+1:row_uωx+nu_x, off_p+1:off_p+np]       = data.grad_x
 
     # Tie x rows
     A[row_uγx+1:row_uγx+nu_x, off_uγx+1:off_uγx+nu_x] = data.tie_x
 
     # Momentum y-component
-    A[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = mass_y_dt - θ * data.visc_y_ω
-    A[row_uωy+1:row_uωy+nu_y, off_uγy+1:off_uγy+nu_y] = -θ * data.visc_y_γ
+    A[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = mass_y_dt + θ * data.visc_y_ω
+    A[row_uωy+1:row_uωy+nu_y, off_uγy+1:off_uγy+nu_y] = +θ * data.visc_y_γ
     A[row_uωy+1:row_uωy+nu_y, off_p+1:off_p+np]       = data.grad_y
 
     # Tie y rows
@@ -762,24 +762,24 @@ function assemble_stokes3D_unsteady!(s::StokesMono, data, Δt::Float64,
     row_con = 2 * sum_nu
 
     # Momentum x-component
-    A[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = mass_x_dt - θ * data.visc_x_ω
-    A[row_uωx+1:row_uωx+nu_x, off_uγx+1:off_uγx+nu_x] = -θ * data.visc_x_γ
+    A[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = mass_x_dt + θ * data.visc_x_ω
+    A[row_uωx+1:row_uωx+nu_x, off_uγx+1:off_uγx+nu_x] = θ * data.visc_x_γ
     A[row_uωx+1:row_uωx+nu_x, off_p+1:off_p+np]       = data.grad_x
 
     # Tie x rows
     A[row_uγx+1:row_uγx+nu_x, off_uγx+1:off_uγx+nu_x] = data.tie_x
 
     # Momentum y-component
-    A[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = mass_y_dt - θ * data.visc_y_ω
-    A[row_uωy+1:row_uωy+nu_y, off_uγy+1:off_uγy+nu_y] = -θ * data.visc_y_γ
+    A[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = mass_y_dt + θ * data.visc_y_ω
+    A[row_uωy+1:row_uωy+nu_y, off_uγy+1:off_uγy+nu_y] = θ * data.visc_y_γ
     A[row_uωy+1:row_uωy+nu_y, off_p+1:off_p+np]       = data.grad_y
 
     # Tie y rows
     A[row_uγy+1:row_uγy+nu_y, off_uγy+1:off_uγy+nu_y] = data.tie_y
 
     # Momentum z-component
-    A[row_uωz+1:row_uωz+nu_z, off_uωz+1:off_uωz+nu_z] = mass_z_dt - θ * data.visc_z_ω
-    A[row_uωz+1:row_uωz+nu_z, off_uγz+1:off_uγz+nu_z] = -θ * data.visc_z_γ
+    A[row_uωz+1:row_uωz+nu_z, off_uωz+1:off_uωz+nu_z] = mass_z_dt + θ * data.visc_z_ω
+    A[row_uωz+1:row_uωz+nu_z, off_uγz+1:off_uγz+nu_z] = θ * data.visc_z_γ
     A[row_uωz+1:row_uωz+nu_z, off_p+1:off_p+np]       = data.grad_z
 
     # Tie z rows

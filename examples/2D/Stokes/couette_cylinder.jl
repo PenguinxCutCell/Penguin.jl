@@ -106,7 +106,7 @@ end
 # Geometry and grids
 ###########
 params = CouetteCylinderParams()
-nx, ny = 512, 512
+nx, ny = 64, 64
 domain_half = 0.8
 Lx = Ly = 2domain_half
 x0 = y0 = -domain_half
@@ -286,11 +286,12 @@ save("stokes2d_couettecylinder_speed.png", fig)
 ###########
 xp = mesh_p.nodes[1]; yp = mesh_p.nodes[2]
 P_field = reshape(pω, (length(xp), length(yp)))
+P_field .= ifelse.(P_field .== 0.0, NaN, P_field)
 fig_p = Figure(resolution=(600, 420))
 axp2 = Axis(fig_p[1, 1], xlabel="x", ylabel="y", title="Couette cylinder: pressure")
-heatmap!(axp2, xp, yp, P_field'; colormap=:viridis)
+hm = heatmap!(axp2, xp, yp, P_field'; colormap=:viridis)
 contour!(axp2, mesh_ux.nodes[1], mesh_ux.nodes[2], body_values'; levels=[0.0], color=:white, linewidth=2)
-Colorbar(fig_p[1, 2], label="p")
+Colorbar(fig_p[1, 2], hm; label="pressure")
 display(fig_p)
 save("stokes2d_couettecylinder_pressure.png", fig_p)
 

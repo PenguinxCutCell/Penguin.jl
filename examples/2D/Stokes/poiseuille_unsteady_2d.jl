@@ -5,14 +5,14 @@ using CairoMakie
 
 """
 Unsteady 2D Stokes Poiseuille flow solved with Crank–Nicolson.
-Velocity starts from rest and relaxes toward the analytical parabola imposed at the walls.
+Velocity starts from rest and relaxes toward the analytical profile imposed at the inlet.
 """
 
 ############
 # Geometry
 ############
 nx, ny = 64, 32
-Lx, Ly = 2.0, 1.0
+Lx, Ly = 4.0, 1.0
 x0, y0 = 0.0, 0.0
 
 mesh_p = Penguin.Mesh((nx, ny), (Lx, Ly), (x0, y0))
@@ -35,15 +35,54 @@ operator_p  = DiffusionOps(capacity_p)
 # Boundary conditions
 ############
 Umax = 1.0
+μ = 1.0
+ρ = 1.0
+
 parabola = (x, y, t) -> 4Umax * (y - y0) * (Ly - (y - y0)) / (Ly^2)
 
-ux_left  = Dirichlet(parabola)
-ux_right = Dirichlet(parabola)
+mu = μ
+G = 8.0 * mu * Umax / (Ly^2)
+nterms = 50
+prefac = (4.0 * G * Ly^2) / (mu * pi^3)
+decay_scale(t) = (mu / ρ) * t / (Ly^2)
+
+function poiseuille_startup_profile(ys, t)
+    profile = similar(ys)
+    decay = decay_scale(t)
+    for (j, y) in enumerate(ys)
+        yloc = y - y0
+        base = (G / (2.0 * mu)) * yloc * (Ly - yloc)
+        series = 0.0
+        for m in 0:(nterms - 1)
+            n = 2 * m + 1
+            lam = n * pi
+            series += sin(lam * yloc / Ly) * exp(-lam^2 * decay) / n^3
+        end
+        profile[j] = base - prefac * series
+    end
+    return profile
+end
+
+function poiseuille_startup_value(y, t)
+    yloc = y - y0
+    base = (G / (2.0 * mu)) * yloc * (Ly - yloc)
+    series = 0.0
+    decay = decay_scale(t)
+    for m in 0:(nterms - 1)
+        n = 2 * m + 1
+        lam = n * pi
+        series += sin(lam * yloc / Ly) * exp(-lam^2 * decay) / n^3
+    end
+    return base - prefac * series
+end
+
+ux_left  = Dirichlet((x, y, t) -> poiseuille_startup_value(y, t))
+ux_right = Dirichlet((x, y, t) -> poiseuille_startup_value(y, t))
 ux_bot   = Dirichlet((x, y, t) -> 0.0)
 ux_top   = Dirichlet((x, y, t) -> 0.0)
 bc_ux = BorderConditions(Dict(
     :left => ux_left,
-    :right => ux_right,
+    :right => Outflow(),
     :bottom => ux_bot,
     :top => ux_top,
 ))
@@ -62,8 +101,6 @@ u_bc = Dirichlet(0.0)
 ############
 # Fluid and initial state
 ############
-μ = 1.0
-ρ = 1.0
 fᵤ = (x, y, z=0.0) -> 0.0
 fₚ = (x, y, z=0.0) -> 0.0
 
@@ -84,7 +121,7 @@ solver = StokesMono(fluid, (bc_ux, bc_uy), pressure_gauge, u_bc; x0=x0_vec)
 # Time integration
 ############
 Δt = 0.01
-T_end = 0.4
+T_end = 1.0
 scheme = :CN
 
 println("Running unsteady Stokes with Δt=$(Δt), T_end=$(T_end), scheme=$(scheme)")
@@ -111,7 +148,7 @@ LIux = LinearIndices((length(xs), length(ys)))
 
 icol = Int(cld(length(xs), 2))
 ux_profile = [uωx[LIux[icol, j]] for j in 1:length(ys)]
-ux_analytical = [parabola(0.0, y, 0.0) for y in ys]
+ux_analytical = poiseuille_startup_profile(ys, times[end])
 profile_err = ux_profile .- ux_analytical
 ℓ2_profile = sqrt(mean(abs2, profile_err))
 ℓinf_profile = maximum(abs, profile_err)
@@ -172,3 +209,32 @@ record(fig_anim, "stokes2d_poiseuille_unsteady.gif", eachindex(states)) do i
 end
 
 println("Saved animation: stokes2d_poiseuille_unsteady.gif")
+
+############
+# Profile comparison at multiple times (same axes) Analytical vs numerical
+############
+nearest_time_index(ts, t) = findmin(abs.(ts .- t))[2]
+target_times = collect(0.0:0.1:1.0)
+sample_indices = unique([nearest_time_index(times, t) for t in target_times])
+
+fig_multi = Figure(resolution=(1000, 420))
+ax_multi = Axis(fig_multi[1, 1], xlabel="u_x", ylabel="y",
+                title="Transient profiles and converged profile")
+
+for (t, idx) in zip(target_times, sample_indices)
+   state = states[idx]
+    uωx_t = state[1:nu_x]
+    ux_profile_t = [uωx_t[LIux[icol, j]] for j in 1:length(ys)]
+    ux_analytical_t = poiseuille_startup_profile(ys, times[idx])
+    lines!(ax_multi, ux_profile_t, ys, label="num t≈$(round(times[idx]; digits=2))")
+    lines!(ax_multi, ux_analytical_t, ys, color=:red, linestyle=:dash,
+           label="ana t≈$(round(times[idx]; digits=2))")
+end
+
+ux_converged = [parabola(0.0, y, 0.0) for y in ys]
+lines!(ax_multi, ux_converged, ys, color=:black, linewidth=2, label="analytical steady")
+
+axislegend(ax_multi, position=:rb)
+display(fig_multi)
+save("stokes2d_poiseuille_unsteady_profiles_times.png", fig_multi)
+println("Saved multi-time profiles: stokes2d_poiseuille_unsteady_profiles_times.png")

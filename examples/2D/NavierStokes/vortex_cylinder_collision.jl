@@ -103,8 +103,7 @@ function initial_state_from_dipole(mesh_ux, mesh_uy; center=dipole_center, R=1.0
     return vec(uomega_x0), vec(ugamma_x0), vec(uomega_y0), vec(ugamma_y0)
 end
 
-###########
-# Diagnostics: vorticity and enstrophy (cut-cell circulation)
+# Vorticity / enstrophy (central differences)
 ###########
 function unpack_velocity_fields(state, nu_x, nu_y, mesh_ux, mesh_uy)
     xs_ux, ys_ux = mesh_ux.nodes
@@ -118,10 +117,28 @@ function unpack_velocity_fields(state, nu_x, nu_y, mesh_ux, mesh_uy)
     return Ux, Uy
 end
 
-function enstrophy_circulation(fluid, state)
-    omega = circulation_vorticity(fluid, state)
-    V = reshape(diag(fluid.capacity_p.V), size(omega))
-    return sum(V .* omega.^2)
+function compute_vorticity(Ux, Uy, dx, dy)
+    nx_u, ny_u = size(Ux)
+    omega = zeros(nx_u, ny_u)
+    @inbounds for j in 2:ny_u-1
+        for i in 2:nx_u-1
+            dUy_dx = (Uy[i + 1, j] - Uy[i - 1, j]) / (2 * dx)
+            dUx_dy = (Ux[i, j + 1] - Ux[i, j - 1]) / (2 * dy)
+            omega[i, j] = dUy_dx - dUx_dy
+        end
+    end
+    omega[1, :] .= omega[2, :]
+    omega[end, :] .= omega[end - 1, :]
+    omega[:, 1] .= omega[:, 2]
+    omega[:, end] .= omega[:, end - 1]
+    return omega
+end
+
+function enstrophy(state, nu_x, nu_y, mesh_ux, mesh_uy, mask_x, mask_y, dx, dy)
+    Ux, Uy = unpack_velocity_fields(state, nu_x, nu_y, mesh_ux, mesh_uy)
+    omega = compute_vorticity(Ux, Uy, dx, dy)
+    fluid_mask = min.(mask_x, mask_y)
+    return sum(fluid_mask .* omega.^2) * dx * dy
 end
 
 ###########
@@ -156,7 +173,7 @@ println("Completed $(length(times) - 1) steps; final time = $(times[end])")
 ###########
 # Post-processing: enstrophy and final snapshots
 ###########
-ens = [enstrophy_circulation(fluid, states[i]) for i in 1:length(states)]
+ens = [enstrophy(states[i], nu_x, nu_y, mesh_ux, mesh_uy, mask_x, mask_y, dx, dy) for i in 1:length(states)]
 
 open("enstrophy_vortex_cylinder.csv", "w") do io
     println(io, "time,enstrophy")
@@ -167,10 +184,9 @@ end
 println("Saved enstrophy time series to enstrophy_vortex_cylinder.csv")
 
 Ux, Uy = unpack_velocity_fields(states[end], nu_x, nu_y, mesh_ux, mesh_uy)
-omega_final = circulation_vorticity(fluid, states[end])
+omega_final = compute_vorticity(Ux, Uy, dx, dy)
 speed_final = sqrt.(Ux.^2 .+ Uy.^2)
 
-xs_p, ys_p = mesh_p.centers
 xs_ux, ys_ux = mesh_ux.nodes
 θ = range(0, 2π, length=180)
 circle_x = xo .+ radius .* cos.(θ)
@@ -183,7 +199,7 @@ lines!(ax_speed, circle_x, circle_y; color=:white, linewidth=2)
 Colorbar(fig[1, 2], hm_speed, label="|u|")
 
 ax_vort = Axis(fig[1, 3], xlabel="x", ylabel="y", title="Vorticity at t=$(round(times[end]; digits=2))")
-hm_vort = heatmap!(ax_vort, xs_p, ys_p, omega_final; colormap=:curl)
+hm_vort = heatmap!(ax_vort, xs_ux, ys_ux, omega_final; colormap=:curl)
 lines!(ax_vort, circle_x, circle_y; color=:white, linewidth=2)
 Colorbar(fig[1, 4], hm_vort, label="ω")
 

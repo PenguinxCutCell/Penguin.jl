@@ -238,13 +238,23 @@ println("Wannier cylinder benchmark solved. Unknowns = ", length(solver.x))
 ###########
 x_nodes_x = mesh_ux.nodes[1]
 y_nodes_x = mesh_ux.nodes[2]
+x_nodes_y = mesh_uy.nodes[1]
+y_nodes_y = mesh_uy.nodes[2]
+x_nodes_p = mesh_p.nodes[1]
+y_nodes_p = mesh_p.nodes[2]
 LI_ux = LinearIndices((length(x_nodes_x), length(y_nodes_x)))
+LI_uy = LinearIndices((length(x_nodes_y), length(y_nodes_y)))
 
 p_vec = solver.x[4 * nu + 1:end]
 u_vec_x = solver.x[1:nu]
 u_vec_y = solver.x[2 * nu + 1:3 * nu]
 
-global sample_count = 0
+Ux_field = reshape(u_vec_x, (length(x_nodes_x), length(y_nodes_x)))
+Uy_field = reshape(u_vec_y, (length(x_nodes_y), length(y_nodes_y)))
+
+global sample_count_speed = 0
+global sample_count_ux = 0
+global sample_count_uy = 0
 global sum_sq_speed = 0.0
 global sum_sq_ux = 0.0
 global sum_sq_uy = 0.0
@@ -258,46 +268,80 @@ for (j, yval) in enumerate(y_nodes_x), (i, xval) in enumerate(x_nodes_x)
     end
     idx = LI_ux[i, j]
     ux_num = u_vec_x[idx]
-    uy_num = u_vec_y[idx]
-    ux_exact, uy_exact = wannier_velocity(xval, yval, params)
+    ux_exact, _ = wannier_velocity(xval, yval, params)
     dux = ux_num - ux_exact
-    duy = uy_num - uy_exact
-    ds = sqrt(dux * dux + duy * duy)
 
-    global sample_count += 1
-    global sum_sq_speed += ds * ds
+    global sample_count_ux += 1
     global sum_sq_ux += dux * dux
-    global sum_sq_uy += duy * duy
-    global max_err_speed = max(max_err_speed, abs(ds))
     global max_err_ux = max(max_err_ux, abs(dux))
+end
+
+for (j, yval) in enumerate(y_nodes_y), (i, xval) in enumerate(x_nodes_y)
+    if body(xval, yval) >= 0
+        continue
+    end
+    idx = LI_uy[i, j]
+    uy_num = u_vec_y[idx]
+    _, uy_exact = wannier_velocity(xval, yval, params)
+    duy = uy_num - uy_exact
+
+    global sample_count_uy += 1
+    global sum_sq_uy += duy * duy
     global max_err_uy = max(max_err_uy, abs(duy))
 end
 
-if sample_count == 0
+ux_p = fill(NaN, length(x_nodes_p), length(y_nodes_p))
+uy_p = fill(NaN, length(x_nodes_p), length(y_nodes_p))
+for j in 1:length(y_nodes_p), i in 1:(length(x_nodes_p) - 1)
+    ux_p[i, j] = 0.5 * (Ux_field[i, j] + Ux_field[i + 1, j])
+end
+for j in 1:(length(y_nodes_p) - 1), i in 1:length(x_nodes_p)
+    uy_p[i, j] = 0.5 * (Uy_field[i, j] + Uy_field[i, j + 1])
+end
+
+for (j, yval) in enumerate(y_nodes_p), (i, xval) in enumerate(x_nodes_p)
+    if !isfinite(ux_p[i, j]) || !isfinite(uy_p[i, j]) || body(xval, yval) >= 0
+        continue
+    end
+    ux_exact, uy_exact = wannier_velocity(xval, yval, params)
+    dux = ux_p[i, j] - ux_exact
+    duy = uy_p[i, j] - uy_exact
+    ds = sqrt(dux * dux + duy * duy)
+    global sample_count_speed += 1
+    global sum_sq_speed += ds * ds
+    global max_err_speed = max(max_err_speed, abs(ds))
+end
+
+if sample_count_speed == 0 && sample_count_ux == 0 && sample_count_uy == 0
     println("No fluid samples found; check geometry or domain size.")
 else
-    l2_speed = sqrt(sum_sq_speed / sample_count)
-    l2_ux = sqrt(sum_sq_ux / sample_count)
-    l2_uy = sqrt(sum_sq_uy / sample_count)
-    println(@sprintf("Samples=%d, L2(|u| error)=%.4e, Linf(|u| error)=%.4e", sample_count, l2_speed, max_err_speed))
-    println(@sprintf("L2(ux)=%.4e, Linf(ux)=%.4e", l2_ux, max_err_ux))
-    println(@sprintf("L2(uy)=%.4e, Linf(uy)=%.4e", l2_uy, max_err_uy))
+    if sample_count_speed > 0
+        l2_speed = sqrt(sum_sq_speed / sample_count_speed)
+        println(@sprintf("Samples=%d, L2(|u| error)=%.4e, Linf(|u| error)=%.4e", sample_count_speed, l2_speed, max_err_speed))
+    end
+    if sample_count_ux > 0
+        l2_ux = sqrt(sum_sq_ux / sample_count_ux)
+        println(@sprintf("L2(ux)=%.4e, Linf(ux)=%.4e", l2_ux, max_err_ux))
+    end
+    if sample_count_uy > 0
+        l2_uy = sqrt(sum_sq_uy / sample_count_uy)
+        println(@sprintf("L2(uy)=%.4e, Linf(uy)=%.4e", l2_uy, max_err_uy))
+    end
 end
 
 ###########
 # Profile along x = 0 (through cylinder centers)
 ###########
-i_axis = argmin(abs.(x_nodes_x .- 0.0))
+i_axis = argmin(abs.(x_nodes_p .- 0.0))
 profile_points = Vector{NTuple{8, Float64}}()
 
-for (j, yval) in enumerate(y_nodes_x)
-    xval = x_nodes_x[i_axis]
-    if body(xval, yval) >= 0
+for (j, yval) in enumerate(y_nodes_p)
+    xval = x_nodes_p[i_axis]
+    if !isfinite(ux_p[i_axis, j]) || !isfinite(uy_p[i_axis, j]) || body(xval, yval) >= 0
         continue
     end
-    idx = LI_ux[i_axis, j]
-    ux_num = u_vec_x[idx]
-    uy_num = u_vec_y[idx]
+    ux_num = ux_p[i_axis, j]
+    uy_num = uy_p[i_axis, j]
     ux_exact, uy_exact = wannier_velocity(xval, yval, params)
     push!(profile_points, (xval, yval, ux_num, uy_num, ux_exact, uy_exact,
                            sqrt(ux_num^2 + uy_num^2), sqrt(ux_exact^2 + uy_exact^2)))
@@ -318,40 +362,58 @@ end
 ###########
 # Visualization
 ###########
-Ux_field = reshape(u_vec_x, (length(mesh_ux.nodes[1]), length(mesh_ux.nodes[2])))
-Uy_field = reshape(u_vec_y, (length(mesh_uy.nodes[1]), length(mesh_uy.nodes[2])))
-speed_num = sqrt.(Ux_field .^ 2 .+ Uy_field .^ 2)
+speed_num = sqrt.(ux_p .^ 2 .+ uy_p .^ 2)
 
-mask = [body(x, y) < 0 ? 1.0 : NaN for x in mesh_ux.nodes[1], y in mesh_ux.nodes[2]]
+mask = [body(x, y) < 0 ? 1.0 : NaN for x in x_nodes_p, y in y_nodes_p]
 
 speed_num_masked = speed_num .* mask
 speed_exact = [begin ux_e, uy_e = wannier_velocity(x, y, params); sqrt(ux_e^2 + uy_e^2) end
-               for x in mesh_ux.nodes[1], y in mesh_ux.nodes[2]]
+               for x in x_nodes_p, y in y_nodes_p]
 speed_exact_masked = speed_exact .* mask
 speed_err = (speed_num .- speed_exact) .* mask
 
-body_values = [body(x, y) for x in mesh_ux.nodes[1], y in mesh_ux.nodes[2]]
+body_values = [body(x, y) for x in x_nodes_p, y in y_nodes_p]
 
 fig = Figure(resolution = (520, 520))
 ax = Axis(fig[1, 1], xlabel = "x", ylabel = "y", title = "Wannier flow: |u| field")
-heatmap!(ax, mesh_ux.nodes[1], mesh_ux.nodes[2], speed_num_masked'; colormap = :viridis)
-contour!(ax, mesh_ux.nodes[1], mesh_ux.nodes[2], body_values'; levels = [0.0], color = :white, linewidth = 2)
-Colorbar(fig[1, 2], label = "|u|")
+hm = heatmap!(ax, x_nodes_p, y_nodes_p, speed_num_masked'; colormap = :viridis)
+contour!(ax, x_nodes_p, y_nodes_p, body_values'; levels = [0.0], color = :white, linewidth = 2)
+Colorbar(fig[1, 2], hm; label = "|u|")
 display(fig)
 save("stokes2d_wannier_speed.png", fig)
 
 fig_err = Figure(resolution = (520, 520))
 ax_err = Axis(fig_err[1, 1], xlabel = "x", ylabel = "y", title = "Wannier flow: |u| error")
-heatmap!(ax_err, mesh_ux.nodes[1], mesh_ux.nodes[2], speed_err'; colormap = :viridis)
-contour!(ax_err, mesh_ux.nodes[1], mesh_ux.nodes[2], body_values'; levels = [0.0], color = :black, linewidth = 1.5)
-Colorbar(fig_err[1, 2], label = "|u| error")
+hm = heatmap!(ax_err, x_nodes_p, y_nodes_p, speed_err'; colormap = :viridis)
+contour!(ax_err, x_nodes_p, y_nodes_p, body_values'; levels = [0.0], color = :black, linewidth = 1.5)
+Colorbar(fig_err[1, 2], hm; label = "|u| error")
 display(fig_err)
 save("stokes2d_wannier_speed_error.png", fig_err)
 
+fig_logerr = Figure(resolution = (520, 520))
+ax_logerr = Axis(fig_logerr[1, 1], xlabel = "x", ylabel = "y", title = "Wannier flow: log10(|u| error)")
+log_speed_err = log10.(abs.(speed_err))
+hm = heatmap!(ax_logerr, x_nodes_p, y_nodes_p, log_speed_err'; colormap = :viridis)
+contour!(ax_logerr, x_nodes_p, y_nodes_p, body_values'; levels = [0.0], color = :black, linewidth = 1.5)
+Colorbar(fig_logerr[1, 2], hm; label = "log10(|u| error)")
+display(fig_logerr)
+save("stokes2d_wannier_speed_log10_error.png", fig_logerr)
+
 fig_exact = Figure(resolution = (520, 520))
 ax_ex = Axis(fig_exact[1, 1], xlabel = "x", ylabel = "y", title = "Wannier flow: |u| exact")
-heatmap!(ax_ex, mesh_ux.nodes[1], mesh_ux.nodes[2], speed_exact_masked'; colormap = :viridis)
-contour!(ax_ex, mesh_ux.nodes[1], mesh_ux.nodes[2], body_values'; levels = [0.0], color = :white, linewidth = 2)
-Colorbar(fig_exact[1, 2], label = "|u| exact")
+hm = heatmap!(ax_ex, x_nodes_p, y_nodes_p, speed_exact_masked'; colormap = :viridis)
+contour!(ax_ex, x_nodes_p, y_nodes_p, body_values'; levels = [0.0], color = :white, linewidth = 2)
+Colorbar(fig_exact[1, 2], hm; label = "|u| exact")
 display(fig_exact)
 save("stokes2d_wannier_speed_exact.png", fig_exact)
+
+fig_pressure = Figure(resolution = (600, 420))
+axp2 = Axis(fig_pressure[1, 1], xlabel = "x", ylabel = "y", title = "Wannier flow: pressure")
+xp = mesh_p.nodes[1]; yp = mesh_p.nodes[2]
+P_field = reshape(p_vec, (length(xp), length(yp)))
+P_field .= ifelse.(P_field .== 0.0, NaN, P_field)
+hm = heatmap!(axp2, xp, yp, P_field'; colormap = :viridis)
+contour!(axp2, mesh_ux.nodes[1], mesh_ux.nodes[2], body_values'; levels = [0.0], color = :white, linewidth = 2)
+Colorbar(fig_pressure[1, 2], hm; label = "pressure")
+display(fig_pressure)
+save("stokes2d_wannier_pressure.png", fig_pressure)

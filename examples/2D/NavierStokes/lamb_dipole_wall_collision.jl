@@ -16,8 +16,8 @@ radius `R=1` and travels with speed `U0`; viscosity sets the Reynolds number
 ###########
 Lx = 15.0
 Ly = 15.0
-nx = 128
-ny = 128
+nx = 64
+ny = 64
 x0 = 0.0
 y0 = 0.0
 
@@ -109,14 +109,33 @@ end
 ###########
 # Helpers: vorticity and plotting
 ###########
+function compute_vorticity(Ux, Uy, dx, dy)
+    nx_u, ny_u = size(Ux)
+    omega = zeros(nx_u, ny_u)
+    @inbounds for j in 2:ny_u-1
+        for i in 2:nx_u-1
+            dUy_dx = (Uy[i + 1, j] - Uy[i - 1, j]) / (2 * dx)
+            dUx_dy = (Ux[i, j + 1] - Ux[i, j - 1]) / (2 * dy)
+            omega[i, j] = dUy_dx - dUx_dy
+        end
+    end
+    omega[1, :] .= omega[2, :]
+    omega[end, :] .= omega[end - 1, :]
+    omega[:, 1] .= omega[:, 2]
+    omega[:, end] .= omega[:, end - 1]
+    return omega
+end
+
 function plot_snapshot(fluid, state, mesh_ux, mesh_uy, Re; outfile_prefix="lamb_dipole")
     xs_ux, ys_ux = mesh_ux.nodes
-    xs_p, ys_p = mesh_p.centers
+    xs_uy, ys_uy = mesh_uy.nodes
+    dx = xs_ux[2] - xs_ux[1]
+    dy = ys_ux[2] - ys_ux[1]
 
     Ux = reshape(state[1:nu_x], (length(xs_ux), length(ys_ux)))
     Uy = reshape(state[2nu_x + 1:2nu_x + nu_y], (length(xs_uy), length(ys_uy)))
     speed = sqrt.(Ux.^2 .+ Uy.^2)
-    omega = circulation_vorticity(fluid, state)
+    omega = compute_vorticity(Ux, Uy, dx, dy)
 
     fig = Figure(resolution=(1200, 520))
     ax_speed = Axis(fig[1, 1], xlabel="x", ylabel="y", title="|u|, Re=$(Int(round(Re)))")
@@ -124,7 +143,7 @@ function plot_snapshot(fluid, state, mesh_ux, mesh_uy, Re; outfile_prefix="lamb_
     Colorbar(fig[1, 2], hm_speed, label="|u|")
 
     ax_omega = Axis(fig[1, 3], xlabel="x", ylabel="y", title="Vorticity, Re=$(Int(round(Re)))")
-    hm_omega = heatmap!(ax_omega, xs_p, ys_p, omega; colormap=:curl)
+    hm_omega = heatmap!(ax_omega, xs_ux, ys_ux, omega; colormap=:curl)
     Colorbar(fig[1, 4], hm_omega, label="ω")
 
     outfile = @sprintf("%s_Re%d.png", outfile_prefix, Int(round(Re)))
@@ -139,8 +158,8 @@ rho = 1.0
 U0 = 1.0
 R = 1.0
 Re_values = [750.0, 1500.0, 3000.0]
-dt = 0.001
-T_end = 8.0      # Basilisk used 12; reduce here for a quicker turnaround
+dt = 0.01
+T_end = 1.0      # Basilisk used 12; reduce here for a quicker turnaround
 
 uomega_x0, ugamma_x0, uomega_y0, ugamma_y0 = initial_state_from_dipole(mesh_ux, mesh_uy; center=(4.7, 7.6), R=R, U0=U0)
 
