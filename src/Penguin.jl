@@ -74,7 +74,7 @@ export DarcyFlow, solve_DarcyFlow!, solve_darcy_velocity
 export DarcyFlowUnsteady, solve_DarcyFlowUnsteady!
 
 include("prescribedmotionsolver/diffusion.jl")
-export MovingDiffusionUnsteadyMono, solve_MovingDiffusionUnsteadyMono!
+export MovingDiffusionUnsteadyMono, solve_MovingDiffusionUnsteadyMono!, solve_MovingDiffusionUnsteadyMono_cfl!
 export MovingDiffusionUnsteadyDiph, solve_MovingDiffusionUnsteadyDiph!
 export A_mono_unstead_diff_moving, b_mono_unstead_diff_moving
 
@@ -142,7 +142,8 @@ include("solver/stokes_diph.jl")
 export StokesDiph, solve_StokesDiph!, solve_StokesDiph_unsteady!
 
 include("solver/navierstokes.jl")
-export NavierStokesMono, solve_NavierStokesMono_unsteady!, solve_NavierStokesMono_unsteady_picard!, solve_NavierStokesMono_steady!, build_convection_operators
+export NavierStokesMono, solve_NavierStokesMono_unsteady!, solve_NavierStokesMono_unsteady_picard!,
+       solve_NavierStokesMono_unsteady_newton!, solve_NavierStokesMono_steady!, build_convection_operators
 export compute_navierstokes_force_diagnostics, navierstokes_reaction_force_components
 export drag_lift_coefficients, pressure_trace_on_cut
 

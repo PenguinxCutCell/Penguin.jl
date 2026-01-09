@@ -268,6 +268,77 @@ function solve_MovingDiffusionUnsteadyMono!(s::Solver, phase::Phase, body::Funct
 
 end
 
+function solve_MovingDiffusionUnsteadyMono_cfl!(s::Solver, phase::Phase, body::Function, Δt::Float64, Tₛ::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, mesh::AbstractMesh, scheme::String, interface_velocity, cfl::Float64; method = IterativeSolvers.gmres, algorithm=nothing, geometry_method="VOFI", kwargs...)
+    if s.A === nothing
+        error("Solver is not initialized. Call a solver constructor first.")
+    end
+
+    println("Solving the problem:")
+    println("- Moving problem")
+    println("- Monophasic problem")
+    println("- Unsteady problem")
+    println("- Diffusion problem")
+
+    # Solve system for the initial condition
+    t=Tₛ
+    println("Time : $(t)")
+    solve_system!(s; method, algorithm=algorithm, kwargs...)
+
+    push!(s.states, s.x)
+    println("Solver Extremum : ", maximum(abs.(s.x)))
+    Tᵢ = s.x
+
+    if length(mesh.nodes) == 1
+        Δh_min = minimum(diff(mesh.nodes[1]))
+    elseif length(mesh.nodes) == 2
+        Δh_min = min(minimum(diff(mesh.nodes[1])), minimum(diff(mesh.nodes[2])))
+    elseif length(mesh.nodes) == 3
+        Δh_min = min(minimum(diff(mesh.nodes[1])), minimum(diff(mesh.nodes[2])), minimum(diff(mesh.nodes[3])))
+    else
+        error("Unsupported mesh dimension")
+    end
+
+    function interface_speed(velocity, time)
+        v = velocity isa Function ? velocity(time) : velocity
+        return v isa Number ? abs(v) : maximum(abs.(v))
+    end
+
+    Δt_prev = Δt
+    # Time loop
+    while t < Tₑ
+        t += Δt_prev
+        if t >= Tₑ
+            break
+        end
+
+        v_abs = interface_speed(interface_velocity, t)
+        if v_abs < 1e-12
+            Δt_step = min(Δt_prev, Tₑ - t)
+        else
+            Δt_step = min(cfl * Δh_min / v_abs, Tₑ - t)
+        end
+
+        println("Time : $(t)")
+        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t+Δt_step], tag=mesh.tag)
+        capacity = Capacity(body, STmesh; method=geometry_method, kwargs...)
+        operator = DiffusionOps(capacity)
+
+        s.A = A_mono_unstead_diff_moving(operator, capacity, phase.Diffusion_coeff, bc, scheme)
+        s.b = b_mono_unstead_diff_moving(operator, capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, Δt_step, t, scheme)
+
+        BC_border_mono!(s.A, s.b, bc_b, mesh; t=t)
+
+        # Solve system
+        solve_system!(s; method, algorithm=algorithm, kwargs...)
+
+        push!(s.states, s.x)
+        println("Solver Extremum : ", maximum(abs.(s.x)))
+        Tᵢ = s.x
+        Δt_prev = Δt_step
+    end
+
+end
+
 
 # Moving - Diffusion - Unsteady - Diphasic
 function MovingDiffusionUnsteadyDiph(phase1::Phase, phase2::Phase, bc_b::BorderConditions, ic::InterfaceConditions, Δt::Float64, Tᵢ::Vector{Float64}, mesh::AbstractMesh, scheme::String)

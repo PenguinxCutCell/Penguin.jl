@@ -1752,6 +1752,276 @@ function solve_NavierStokesMono_unsteady_picard!(s::NavierStokesMono; Δt::Float
     end
 end
 
+function solve_NavierStokesMono_unsteady_newton!(s::NavierStokesMono; Δt::Float64, T_end::Float64,
+                                                 scheme::Symbol=:CN, inner_tol::Float64=1e-6,
+                                                 inner_maxiter::Int=10, relaxation::Float64=1.0,
+                                                 method=Base.:\, algorithm=nothing,
+                                                 store_states::Bool=true, kwargs...)
+    θ = scheme_to_theta(scheme)
+    θ_relax = clamp(relaxation, 0.0, 1.0)
+    N = length(s.fluid.operator_u)
+    empty!(s.residual_history)
+    s.prev_conv = nothing
+
+    if N == 1
+        data = navierstokes1D_blocks(s)
+
+        p_offset = 2 * data.nu
+        np = data.np
+        Ntot = p_offset + np
+
+        x_prev = length(s.x) == Ntot ? copy(s.x) : zeros(Ntot)
+
+        p_half_prev = zeros(np)
+        if length(s.x) == Ntot && !isempty(s.x)
+            p_half_prev .= s.x[p_offset+1:p_offset+np]
+        end
+
+        histories = store_states ? Vector{Vector{Float64}}() : Vector{Vector{Float64}}()
+        if store_states
+            push!(histories, copy(x_prev))
+        end
+        times = Float64[0.0]
+
+        t = 0.0
+        println("[NavierStokesMono] Starting unsteady 1D Newton solve up to T=$(T_end) with Δt=$(Δt) and θ=$(θ)")
+        while t < T_end - 1e-12 * max(1.0, T_end)
+            dt_step = min(Δt, T_end - t)
+            t_next = t + dt_step
+
+            conv_prev_tuple = (1.0 - θ) == 0.0 ? nothing : compute_convection_vectors!(s, data, x_prev)
+
+            x_iter = copy(x_prev)
+            residual = Inf
+            iter = 0
+
+            while iter < inner_maxiter && residual > inner_tol
+                F_val = compute_navierstokes1D_unsteady_residual!(s, data, x_iter, x_prev, dt_step, t, t_next, θ, conv_prev_tuple)
+                J_val = compute_navierstokes1D_unsteady_jacobian!(s, data, x_iter, dt_step, θ)
+                rhs = -F_val
+
+                apply_velocity_dirichlet_1D_newton!(J_val, rhs, x_iter, s.bc_u[1], s.fluid.mesh_u[1];
+                                                    nu=data.nu, uω_off=0, uγ_off=data.nu,
+                                                    row_uω_off=0, row_uγ_off=data.nu,
+                                                    t=t_next)
+
+                apply_pressure_gauge_newton!(J_val, rhs, x_iter, s.pressure_gauge, s.fluid.mesh_p, s.fluid.capacity_p;
+                                             p_offset=p_offset, np=np,
+                                             row_start=p_offset+1,
+                                             t=t_next)
+
+                s.A = J_val
+                s.b = rhs
+                solve_navierstokes_linear_system!(s; method=method, algorithm=algorithm, kwargs...)
+
+                x_new = x_iter .+ θ_relax .* s.x
+                vel_residual = maximum(abs, (x_new .- x_iter)[1:p_offset])
+                residual = vel_residual
+                push!(s.residual_history, residual)
+
+                x_iter .= x_new
+                s.x .= x_new
+
+                iter += 1
+                println("[NavierStokesMono] t=$(round(t_next; digits=6)) Newton iter=$(iter) max|Δu|=$(residual)")
+            end
+
+            if residual > inner_tol
+                @warn "Navier–Stokes unsteady Newton (1D) did not reach tolerance" time=t_next final_residual=residual iterations=iter tol=inner_tol
+            end
+
+            x_prev = copy(x_iter)
+            p_half_prev .= x_prev[p_offset+1:p_offset+np]
+
+            push!(times, t_next)
+            if store_states
+                push!(histories, copy(x_prev))
+            end
+            max_state = maximum(abs, x_prev)
+            println("[NavierStokesMono] t=$(round(t_next; digits=6)) max|state|=$(max_state)")
+
+            t = t_next
+        end
+
+        s.prev_conv = nothing
+        return times, histories
+    elseif N == 2
+        data = navierstokes2D_blocks(s)
+
+        p_offset = 2 * (data.nu_x + data.nu_y)
+        np = data.np
+        Ntot = p_offset + np
+
+        x_prev = length(s.x) == Ntot ? copy(s.x) : zeros(Ntot)
+
+        p_half_prev = zeros(np)
+        if length(s.x) == Ntot && !isempty(s.x)
+            p_half_prev .= s.x[p_offset+1:p_offset+np]
+        end
+
+        histories = store_states ? Vector{Vector{Float64}}() : Vector{Vector{Float64}}()
+        if store_states
+            push!(histories, copy(x_prev))
+        end
+        times = Float64[0.0]
+
+        t = 0.0
+        println("[NavierStokesMono] Starting unsteady Newton solve up to T=$(T_end) with Δt=$(Δt) and θ=$(θ)")
+        while t < T_end - 1e-12 * max(1.0, T_end)
+            dt_step = min(Δt, T_end - t)
+            t_next = t + dt_step
+
+            conv_prev_tuple = (1.0 - θ) == 0.0 ? nothing : compute_convection_vectors!(s, data, x_prev)
+
+            x_iter = copy(x_prev)
+            residual = Inf
+            iter = 0
+
+            while iter < inner_maxiter && residual > inner_tol
+                F_val = compute_navierstokes2D_unsteady_residual!(s, data, x_iter, x_prev, dt_step, t, t_next, θ, conv_prev_tuple)
+                J_val = compute_navierstokes2D_unsteady_jacobian!(s, data, x_iter, dt_step, θ)
+                rhs = -F_val
+
+                apply_velocity_dirichlet_2D_newton!(J_val, rhs, x_iter, s.bc_u[1], s.bc_u[2], s.fluid.mesh_u;
+                                                    nu_x=data.nu_x, nu_y=data.nu_y,
+                                                    uωx_off=0, uγx_off=data.nu_x,
+                                                    uωy_off=2*data.nu_x, uγy_off=2*data.nu_x+data.nu_y,
+                                                    row_uωx_off=0, row_uγx_off=data.nu_x,
+                                                    row_uωy_off=2*data.nu_x, row_uγy_off=2*data.nu_x+data.nu_y,
+                                                    t=t_next)
+
+                apply_pressure_gauge_newton!(J_val, rhs, x_iter, s.pressure_gauge, s.fluid.mesh_p, s.fluid.capacity_p;
+                                             p_offset=p_offset, np=np,
+                                             row_start=2*(data.nu_x+data.nu_y)+1,
+                                             t=t_next)
+
+                s.A = J_val
+                s.b = rhs
+                solve_navierstokes_linear_system!(s; method=method, algorithm=algorithm, kwargs...)
+
+                x_new = x_iter .+ θ_relax .* s.x
+                vel_residual = maximum(abs, (x_new .- x_iter)[1:p_offset])
+                residual = vel_residual
+                push!(s.residual_history, residual)
+
+                x_iter .= x_new
+                s.x .= x_new
+
+                iter += 1
+                println("[NavierStokesMono] t=$(round(t_next; digits=6)) Newton iter=$(iter) max|Δu|=$(residual)")
+            end
+
+            if residual > inner_tol
+                @warn "Navier–Stokes unsteady Newton (2D) did not reach tolerance" time=t_next final_residual=residual iterations=iter tol=inner_tol
+            end
+
+            x_prev = copy(x_iter)
+            p_half_prev .= x_prev[p_offset+1:p_offset+np]
+
+            push!(times, t_next)
+            if store_states
+                push!(histories, copy(x_prev))
+            end
+            max_state = maximum(abs, x_prev)
+            println("[NavierStokesMono] t=$(round(t_next; digits=6)) max|state|=$(max_state)")
+
+            t = t_next
+        end
+
+        s.prev_conv = nothing
+        return times, histories
+    elseif N == 3
+        data = navierstokes3D_blocks(s)
+
+        p_offset = 2 * (data.nu_x + data.nu_y + data.nu_z)
+        np = data.np
+        Ntot = p_offset + np
+
+        x_prev = length(s.x) == Ntot ? copy(s.x) : zeros(Ntot)
+
+        p_half_prev = zeros(np)
+        if length(s.x) == Ntot && !isempty(s.x)
+            p_half_prev .= s.x[p_offset+1:p_offset+np]
+        end
+
+        histories = store_states ? Vector{Vector{Float64}}() : Vector{Vector{Float64}}()
+        if store_states
+            push!(histories, copy(x_prev))
+        end
+        times = Float64[0.0]
+
+        t = 0.0
+        println("[NavierStokesMono] Starting unsteady Newton solve (3D) up to T=$(T_end) with Δt=$(Δt) and θ=$(θ)")
+        while t < T_end - 1e-12 * max(1.0, T_end)
+            dt_step = min(Δt, T_end - t)
+            t_next = t + dt_step
+
+            conv_prev_tuple = (1.0 - θ) == 0.0 ? nothing : compute_convection_vectors!(s, data, x_prev)
+
+            x_iter = copy(x_prev)
+            residual = Inf
+            iter = 0
+
+            while iter < inner_maxiter && residual > inner_tol
+                F_val = compute_navierstokes3D_unsteady_residual!(s, data, x_iter, x_prev, dt_step, t, t_next, θ, conv_prev_tuple)
+                J_val = compute_navierstokes3D_unsteady_jacobian!(s, data, x_iter, dt_step, θ)
+                rhs = -F_val
+
+                apply_velocity_dirichlet_3D_newton!(J_val, rhs, x_iter, s.bc_u[1], s.bc_u[2], s.bc_u[3], s.fluid.mesh_u;
+                                                    nu_x=data.nu_x, nu_y=data.nu_y, nu_z=data.nu_z,
+                                                    uωx_off=0, uγx_off=data.nu_x,
+                                                    uωy_off=2*data.nu_x, uγy_off=2*data.nu_x+data.nu_y,
+                                                    uωz_off=2*data.nu_x+2*data.nu_y, uγz_off=2*data.nu_x+2*data.nu_y+data.nu_z,
+                                                    row_uωx_off=0, row_uγx_off=data.nu_x,
+                                                    row_uωy_off=2*data.nu_x, row_uγy_off=2*data.nu_x+data.nu_y,
+                                                    row_uωz_off=2*data.nu_x+2*data.nu_y, row_uγz_off=2*data.nu_x+2*data.nu_y+data.nu_z,
+                                                    t=t_next)
+
+                apply_pressure_gauge_newton!(J_val, rhs, x_iter, s.pressure_gauge, s.fluid.mesh_p, s.fluid.capacity_p;
+                                             p_offset=p_offset, np=np,
+                                             row_start=2*(data.nu_x+data.nu_y+data.nu_z)+1,
+                                             t=t_next)
+
+                s.A = J_val
+                s.b = rhs
+                solve_navierstokes_linear_system!(s; method=method, algorithm=algorithm, kwargs...)
+
+                x_new = x_iter .+ θ_relax .* s.x
+                vel_residual = maximum(abs, (x_new .- x_iter)[1:p_offset])
+                residual = vel_residual
+                push!(s.residual_history, residual)
+
+                x_iter .= x_new
+                s.x .= x_new
+
+                iter += 1
+                println("[NavierStokesMono] t=$(round(t_next; digits=6)) Newton iter=$(iter) max|Δu|=$(residual)")
+            end
+
+            if residual > inner_tol
+                @warn "Navier–Stokes unsteady Newton (3D) did not reach tolerance" time=t_next final_residual=residual iterations=iter tol=inner_tol
+            end
+
+            x_prev = copy(x_iter)
+            p_half_prev .= x_prev[p_offset+1:p_offset+np]
+
+            push!(times, t_next)
+            if store_states
+                push!(histories, copy(x_prev))
+            end
+            max_state = maximum(abs, x_prev)
+            println("[NavierStokesMono] t=$(round(t_next; digits=6)) max|state|=$(max_state)")
+
+            t = t_next
+        end
+
+        s.prev_conv = nothing
+        return times, histories
+    else
+        error("Navier–Stokes unsteady Newton solver not implemented for N=$(N)")
+    end
+end
+
 function build_convection_operators(s::NavierStokesMono, state::AbstractVector{<:Real})
     N = length(s.fluid.operator_u)
     data = if N == 1
@@ -2107,6 +2377,419 @@ function solve_NavierStokesMono_steady_newton!(s::NavierStokesMono; tol=1e-8, ma
 end
 
 # Newton method helper functions
+
+function compute_navierstokes1D_unsteady_residual!(s::NavierStokesMono, data,
+                                                   x_state::AbstractVector{<:Real},
+                                                   x_prev::AbstractVector{<:Real},
+                                                   Δt::Float64,
+                                                   t_prev::Float64, t_next::Float64,
+                                                   θ::Float64,
+                                                   conv_prev::Union{Nothing,NTuple{1,Vector{Float64}}})
+    nu = data.nu
+    np = data.np
+
+    off_uω = 0
+    off_uγ = nu
+    off_p  = 2 * nu
+
+    uω = view(x_state, off_uω+1:off_uω+nu)
+    uγ = view(x_state, off_uγ+1:off_uγ+nu)
+    pω = view(x_state, off_p+1:off_p+np)
+
+    uω_prev = view(x_prev, off_uω+1:off_uω+nu)
+    uγ_prev = view(x_prev, off_uγ+1:off_uγ+nu)
+
+    conv_curr = compute_convection_vectors!(s, data, x_state)
+
+    ρ = s.fluid.ρ
+    ρ_val = ρ isa Function ? 1.0 : ρ
+
+    f_prev = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_prev, 1)
+    f_next = safe_build_source(data.op_u, s.fluid.fᵤ, data.cap_u, t_next, 1)
+    load = data.V * (θ .* f_next .+ (1.0 - θ) .* f_prev)
+
+    mass_dt = (1.0 / Δt) * data.mass
+
+    uω_vec = Vector{Float64}(uω)
+    uγ_vec = Vector{Float64}(uγ)
+    p_vec = Vector{Float64}(pω)
+    uω_prev_vec = Vector{Float64}(uω_prev)
+    uγ_prev_vec = Vector{Float64}(uγ_prev)
+
+    conv_prev_vec = conv_prev === nothing ? zeros(Float64, nu) : conv_prev[1]
+
+    F_mom = mass_dt * (uω_vec .- uω_prev_vec)
+    F_mom .+= θ .* (data.visc_u_ω * uω_vec .+ data.visc_u_γ * uγ_vec .+ ρ_val .* conv_curr[1])
+    F_mom .+= data.grad * p_vec
+    F_mom .-= load
+    F_mom .-= (1.0 - θ) .* (data.visc_u_ω * uω_prev_vec .+ data.visc_u_γ * uγ_prev_vec .+ ρ_val .* conv_prev_vec)
+
+    g_cut = safe_build_g(data.op_u, s.bc_cut, data.cap_u, t_next)
+    F_tie = uγ_vec .- g_cut
+
+    F_cont = data.div_u_ω * uω_vec .+ data.div_u_γ * uγ_vec
+
+    return vcat(F_mom, F_tie, F_cont)
+end
+
+function compute_navierstokes1D_unsteady_jacobian!(s::NavierStokesMono, data,
+                                                   x_state::AbstractVector{<:Real},
+                                                   Δt::Float64,
+                                                   θ::Float64)
+    nu = data.nu
+    np = data.np
+
+    rows = 2 * nu + np
+    cols = 2 * nu + np
+    J = spzeros(Float64, rows, cols)
+
+    off_uω = 0
+    off_uγ = nu
+    off_p  = 2 * nu
+
+    row_uω = 0
+    row_uγ = nu
+    row_con = 2 * nu
+
+    compute_convection_vectors!(s, data, x_state)
+    ops = s.last_conv_ops
+    @assert ops !== nothing
+    bulk = ops.bulk[1]
+    K_adv = ops.K_adv[1]
+
+    ρ = s.fluid.ρ
+    ρ_val = ρ isa Function ? 1.0 : ρ
+
+    mass_dt = (1.0 / Δt) * data.mass
+
+    J[row_uω+1:row_uω+nu, off_uω+1:off_uω+nu] = mass_dt + θ * (data.visc_u_ω + ρ_val * bulk - 0.5 * ρ_val * K_adv)
+    J[row_uω+1:row_uω+nu, off_uγ+1:off_uγ+nu] = θ * data.visc_u_γ
+    J[row_uω+1:row_uω+nu, off_p+1:off_p+np]   = data.grad
+
+    J[row_uγ+1:row_uγ+nu, off_uγ+1:off_uγ+nu] = data.tie
+
+    con_rows = row_con + 1:row_con + np
+    J[con_rows, off_uω+1:off_uω+nu] = data.div_u_ω
+    J[con_rows, off_uγ+1:off_uγ+nu] = data.div_u_γ
+
+    return J
+end
+
+function compute_navierstokes2D_unsteady_residual!(s::NavierStokesMono, data,
+                                                   x_state::AbstractVector{<:Real},
+                                                   x_prev::AbstractVector{<:Real},
+                                                   Δt::Float64,
+                                                   t_prev::Float64, t_next::Float64,
+                                                   θ::Float64,
+                                                   conv_prev::Union{Nothing,NTuple{2,Vector{Float64}}})
+    nu_x = data.nu_x
+    nu_y = data.nu_y
+    sum_nu = nu_x + nu_y
+    np = data.np
+
+    off_uωx = 0
+    off_uγx = nu_x
+    off_uωy = 2 * nu_x
+    off_uγy = 2 * nu_x + nu_y
+    off_p   = 2 * sum_nu
+
+    uωx = view(x_state, off_uωx+1:off_uωx+nu_x)
+    uγx = view(x_state, off_uγx+1:off_uγx+nu_x)
+    uωy = view(x_state, off_uωy+1:off_uωy+nu_y)
+    uγy = view(x_state, off_uγy+1:off_uγy+nu_y)
+    pω = view(x_state, off_p+1:off_p+np)
+
+    uωx_prev = view(x_prev, off_uωx+1:off_uωx+nu_x)
+    uγx_prev = view(x_prev, off_uγx+1:off_uγx+nu_x)
+    uωy_prev = view(x_prev, off_uωy+1:off_uωy+nu_y)
+    uγy_prev = view(x_prev, off_uγy+1:off_uγy+nu_y)
+
+    conv_curr = compute_convection_vectors!(s, data, x_state)
+
+    ρ = s.fluid.ρ
+    ρ_val = ρ isa Function ? 1.0 : ρ
+
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev, 1)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next, 1)
+    load_x = data.Vx * (θ .* f_next_x .+ (1.0 - θ) .* f_prev_x)
+
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev, 2)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next, 2)
+    load_y = data.Vy * (θ .* f_next_y .+ (1.0 - θ) .* f_prev_y)
+
+    mass_x_dt = (1.0 / Δt) * data.mass_x
+    mass_y_dt = (1.0 / Δt) * data.mass_y
+
+    uωx_vec = Vector{Float64}(uωx)
+    uγx_vec = Vector{Float64}(uγx)
+    uωy_vec = Vector{Float64}(uωy)
+    uγy_vec = Vector{Float64}(uγy)
+    p_vec = Vector{Float64}(pω)
+    uωx_prev_vec = Vector{Float64}(uωx_prev)
+    uγx_prev_vec = Vector{Float64}(uγx_prev)
+    uωy_prev_vec = Vector{Float64}(uωy_prev)
+    uγy_prev_vec = Vector{Float64}(uγy_prev)
+
+    conv_prev_x = conv_prev === nothing ? zeros(Float64, nu_x) : conv_prev[1]
+    conv_prev_y = conv_prev === nothing ? zeros(Float64, nu_y) : conv_prev[2]
+
+    F_mom_x = mass_x_dt * (uωx_vec .- uωx_prev_vec)
+    F_mom_x .+= θ .* (data.visc_x_ω * uωx_vec .+ data.visc_x_γ * uγx_vec .+ ρ_val .* conv_curr[1])
+    F_mom_x .+= data.grad_x * p_vec
+    F_mom_x .-= load_x
+    F_mom_x .-= (1.0 - θ) .* (data.visc_x_ω * uωx_prev_vec .+ data.visc_x_γ * uγx_prev_vec .+ ρ_val .* conv_prev_x)
+
+    F_mom_y = mass_y_dt * (uωy_vec .- uωy_prev_vec)
+    F_mom_y .+= θ .* (data.visc_y_ω * uωy_vec .+ data.visc_y_γ * uγy_vec .+ ρ_val .* conv_curr[2])
+    F_mom_y .+= data.grad_y * p_vec
+    F_mom_y .-= load_y
+    F_mom_y .-= (1.0 - θ) .* (data.visc_y_ω * uωy_prev_vec .+ data.visc_y_γ * uγy_prev_vec .+ ρ_val .* conv_prev_y)
+
+    g_cut_x = safe_build_g(data.op_ux, s.bc_cut, data.cap_px, t_next)
+    g_cut_y = safe_build_g(data.op_uy, s.bc_cut, data.cap_py, t_next)
+
+    F_tie_x = uγx_vec .- g_cut_x
+    F_tie_y = uγy_vec .- g_cut_y
+
+    F_cont = data.div_x_ω * uωx_vec .+ data.div_x_γ * uγx_vec .+
+             data.div_y_ω * uωy_vec .+ data.div_y_γ * uγy_vec
+
+    return vcat(F_mom_x, F_tie_x, F_mom_y, F_tie_y, F_cont)
+end
+
+function compute_navierstokes2D_unsteady_jacobian!(s::NavierStokesMono, data,
+                                                   x_state::AbstractVector{<:Real},
+                                                   Δt::Float64,
+                                                   θ::Float64)
+    nu_x = data.nu_x
+    nu_y = data.nu_y
+    sum_nu = nu_x + nu_y
+    np = data.np
+
+    rows = 2 * sum_nu + np
+    cols = 2 * sum_nu + np
+    J = spzeros(Float64, rows, cols)
+
+    off_uωx = 0
+    off_uγx = nu_x
+    off_uωy = 2 * nu_x
+    off_uγy = 2 * nu_x + nu_y
+    off_p   = 2 * sum_nu
+
+    row_uωx = 0
+    row_uγx = nu_x
+    row_uωy = 2 * nu_x
+    row_uγy = 2 * nu_x + nu_y
+    row_con = 2 * sum_nu
+
+    compute_convection_vectors!(s, data, x_state)
+    ops = s.last_conv_ops
+    @assert ops !== nothing
+    bulk = ops.bulk
+    K_adv = ops.K_adv
+
+    ρ = s.fluid.ρ
+    ρ_val = ρ isa Function ? 1.0 : ρ
+
+    mass_x_dt = (1.0 / Δt) * data.mass_x
+    mass_y_dt = (1.0 / Δt) * data.mass_y
+
+    J[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = mass_x_dt + θ * (data.visc_x_ω + ρ_val * bulk[1] - 0.5 * ρ_val * K_adv[1])
+    J[row_uωx+1:row_uωx+nu_x, off_uγx+1:off_uγx+nu_x] = θ * data.visc_x_γ
+    J[row_uωx+1:row_uωx+nu_x, off_p+1:off_p+np]       = data.grad_x
+
+    J[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = mass_y_dt + θ * (data.visc_y_ω + ρ_val * bulk[2] - 0.5 * ρ_val * K_adv[2])
+    J[row_uωy+1:row_uωy+nu_y, off_uγy+1:off_uγy+nu_y] = θ * data.visc_y_γ
+    J[row_uωy+1:row_uωy+nu_y, off_p+1:off_p+np]       = data.grad_y
+
+    J[row_uγx+1:row_uγx+nu_x, off_uγx+1:off_uγx+nu_x] = data.tie_x
+    J[row_uγy+1:row_uγy+nu_y, off_uγy+1:off_uγy+nu_y] = data.tie_y
+
+    con_rows = row_con+1:row_con+np
+    J[con_rows, off_uωx+1:off_uωx+nu_x] = data.div_x_ω
+    J[con_rows, off_uγx+1:off_uγx+nu_x] = data.div_x_γ
+    J[con_rows, off_uωy+1:off_uωy+nu_y] = data.div_y_ω
+    J[con_rows, off_uγy+1:off_uγy+nu_y] = data.div_y_γ
+
+    return J
+end
+
+function compute_navierstokes3D_unsteady_residual!(s::NavierStokesMono, data,
+                                                   x_state::AbstractVector{<:Real},
+                                                   x_prev::AbstractVector{<:Real},
+                                                   Δt::Float64,
+                                                   t_prev::Float64, t_next::Float64,
+                                                   θ::Float64,
+                                                   conv_prev::Union{Nothing,NTuple{3,Vector{Float64}}})
+    nu_x = data.nu_x
+    nu_y = data.nu_y
+    nu_z = data.nu_z
+    np = data.np
+
+    off_uωx = 0
+    off_uγx = nu_x
+    off_uωy = 2 * nu_x
+    off_uγy = 2 * nu_x + nu_y
+    off_uωz = 2 * nu_x + 2 * nu_y
+    off_uγz = 2 * nu_x + 2 * nu_y + nu_z
+    off_p   = 2 * (nu_x + nu_y + nu_z)
+
+    uωx = view(x_state, off_uωx+1:off_uωx+nu_x)
+    uγx = view(x_state, off_uγx+1:off_uγx+nu_x)
+    uωy = view(x_state, off_uωy+1:off_uωy+nu_y)
+    uγy = view(x_state, off_uγy+1:off_uγy+nu_y)
+    uωz = view(x_state, off_uωz+1:off_uωz+nu_z)
+    uγz = view(x_state, off_uγz+1:off_uγz+nu_z)
+    pω = view(x_state, off_p+1:off_p+np)
+
+    uωx_prev = view(x_prev, off_uωx+1:off_uωx+nu_x)
+    uγx_prev = view(x_prev, off_uγx+1:off_uγx+nu_x)
+    uωy_prev = view(x_prev, off_uωy+1:off_uωy+nu_y)
+    uγy_prev = view(x_prev, off_uγy+1:off_uγy+nu_y)
+    uωz_prev = view(x_prev, off_uωz+1:off_uωz+nu_z)
+    uγz_prev = view(x_prev, off_uγz+1:off_uγz+nu_z)
+
+    conv_curr = compute_convection_vectors!(s, data, x_state)
+
+    ρ = s.fluid.ρ
+    ρ_val = ρ isa Function ? 1.0 : ρ
+
+    f_prev_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_prev, 1)
+    f_next_x = safe_build_source(data.op_ux, s.fluid.fᵤ, data.cap_px, t_next, 1)
+    load_x = data.Vx * (θ .* f_next_x .+ (1.0 - θ) .* f_prev_x)
+
+    f_prev_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_prev, 2)
+    f_next_y = safe_build_source(data.op_uy, s.fluid.fᵤ, data.cap_py, t_next, 2)
+    load_y = data.Vy * (θ .* f_next_y .+ (1.0 - θ) .* f_prev_y)
+
+    f_prev_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_prev, 3)
+    f_next_z = safe_build_source(data.op_uz, s.fluid.fᵤ, data.cap_pz, t_next, 3)
+    load_z = data.Vz * (θ .* f_next_z .+ (1.0 - θ) .* f_prev_z)
+
+    mass_x_dt = (1.0 / Δt) * data.mass_x
+    mass_y_dt = (1.0 / Δt) * data.mass_y
+    mass_z_dt = (1.0 / Δt) * data.mass_z
+
+    uωx_vec = Vector{Float64}(uωx)
+    uγx_vec = Vector{Float64}(uγx)
+    uωy_vec = Vector{Float64}(uωy)
+    uγy_vec = Vector{Float64}(uγy)
+    uωz_vec = Vector{Float64}(uωz)
+    uγz_vec = Vector{Float64}(uγz)
+    p_vec = Vector{Float64}(pω)
+    uωx_prev_vec = Vector{Float64}(uωx_prev)
+    uγx_prev_vec = Vector{Float64}(uγx_prev)
+    uωy_prev_vec = Vector{Float64}(uωy_prev)
+    uγy_prev_vec = Vector{Float64}(uγy_prev)
+    uωz_prev_vec = Vector{Float64}(uωz_prev)
+    uγz_prev_vec = Vector{Float64}(uγz_prev)
+
+    conv_prev_x = conv_prev === nothing ? zeros(Float64, nu_x) : conv_prev[1]
+    conv_prev_y = conv_prev === nothing ? zeros(Float64, nu_y) : conv_prev[2]
+    conv_prev_z = conv_prev === nothing ? zeros(Float64, nu_z) : conv_prev[3]
+
+    F_mom_x = mass_x_dt * (uωx_vec .- uωx_prev_vec)
+    F_mom_x .+= θ .* (data.visc_x_ω * uωx_vec .+ data.visc_x_γ * uγx_vec .+ ρ_val .* conv_curr[1])
+    F_mom_x .+= data.grad_x * p_vec
+    F_mom_x .-= load_x
+    F_mom_x .-= (1.0 - θ) .* (data.visc_x_ω * uωx_prev_vec .+ data.visc_x_γ * uγx_prev_vec .+ ρ_val .* conv_prev_x)
+
+    F_mom_y = mass_y_dt * (uωy_vec .- uωy_prev_vec)
+    F_mom_y .+= θ .* (data.visc_y_ω * uωy_vec .+ data.visc_y_γ * uγy_vec .+ ρ_val .* conv_curr[2])
+    F_mom_y .+= data.grad_y * p_vec
+    F_mom_y .-= load_y
+    F_mom_y .-= (1.0 - θ) .* (data.visc_y_ω * uωy_prev_vec .+ data.visc_y_γ * uγy_prev_vec .+ ρ_val .* conv_prev_y)
+
+    F_mom_z = mass_z_dt * (uωz_vec .- uωz_prev_vec)
+    F_mom_z .+= θ .* (data.visc_z_ω * uωz_vec .+ data.visc_z_γ * uγz_vec .+ ρ_val .* conv_curr[3])
+    F_mom_z .+= data.grad_z * p_vec
+    F_mom_z .-= load_z
+    F_mom_z .-= (1.0 - θ) .* (data.visc_z_ω * uωz_prev_vec .+ data.visc_z_γ * uγz_prev_vec .+ ρ_val .* conv_prev_z)
+
+    g_cut_x = safe_build_g(data.op_ux, s.bc_cut, data.cap_px, t_next)
+    g_cut_y = safe_build_g(data.op_uy, s.bc_cut, data.cap_py, t_next)
+    g_cut_z = safe_build_g(data.op_uz, s.bc_cut, data.cap_pz, t_next)
+
+    F_tie_x = uγx_vec .- g_cut_x
+    F_tie_y = uγy_vec .- g_cut_y
+    F_tie_z = uγz_vec .- g_cut_z
+
+    F_cont = data.div_x_ω * uωx_vec .+ data.div_x_γ * uγx_vec .+
+             data.div_y_ω * uωy_vec .+ data.div_y_γ * uγy_vec .+
+             data.div_z_ω * uωz_vec .+ data.div_z_γ * uγz_vec
+
+    return vcat(F_mom_x, F_tie_x, F_mom_y, F_tie_y, F_mom_z, F_tie_z, F_cont)
+end
+
+function compute_navierstokes3D_unsteady_jacobian!(s::NavierStokesMono, data,
+                                                   x_state::AbstractVector{<:Real},
+                                                   Δt::Float64,
+                                                   θ::Float64)
+    nu_x = data.nu_x
+    nu_y = data.nu_y
+    nu_z = data.nu_z
+    sum_nu = nu_x + nu_y + nu_z
+    np = data.np
+
+    rows = 2 * sum_nu + np
+    cols = 2 * sum_nu + np
+    J = spzeros(Float64, rows, cols)
+
+    off_uωx = 0
+    off_uγx = nu_x
+    off_uωy = 2 * nu_x
+    off_uγy = 2 * nu_x + nu_y
+    off_uωz = 2 * nu_x + 2 * nu_y
+    off_uγz = 2 * nu_x + 2 * nu_y + nu_z
+    off_p   = 2 * sum_nu
+
+    row_uωx = 0
+    row_uγx = nu_x
+    row_uωy = 2 * nu_x
+    row_uγy = 2 * nu_x + nu_y
+    row_uωz = 2 * nu_x + 2 * nu_y
+    row_uγz = 2 * nu_x + 2 * nu_y + nu_z
+    row_con = 2 * sum_nu
+
+    compute_convection_vectors!(s, data, x_state)
+    ops = s.last_conv_ops
+    @assert ops !== nothing
+    bulk = ops.bulk
+    K_adv = ops.K_adv
+
+    ρ = s.fluid.ρ
+    ρ_val = ρ isa Function ? 1.0 : ρ
+
+    mass_x_dt = (1.0 / Δt) * data.mass_x
+    mass_y_dt = (1.0 / Δt) * data.mass_y
+    mass_z_dt = (1.0 / Δt) * data.mass_z
+
+    J[row_uωx+1:row_uωx+nu_x, off_uωx+1:off_uωx+nu_x] = mass_x_dt + θ * (data.visc_x_ω + ρ_val * bulk[1] - 0.5 * ρ_val * K_adv[1])
+    J[row_uωx+1:row_uωx+nu_x, off_uγx+1:off_uγx+nu_x] = θ * data.visc_x_γ
+    J[row_uωx+1:row_uωx+nu_x, off_p+1:off_p+np]       = data.grad_x
+
+    J[row_uωy+1:row_uωy+nu_y, off_uωy+1:off_uωy+nu_y] = mass_y_dt + θ * (data.visc_y_ω + ρ_val * bulk[2] - 0.5 * ρ_val * K_adv[2])
+    J[row_uωy+1:row_uωy+nu_y, off_uγy+1:off_uγy+nu_y] = θ * data.visc_y_γ
+    J[row_uωy+1:row_uωy+nu_y, off_p+1:off_p+np]       = data.grad_y
+
+    J[row_uωz+1:row_uωz+nu_z, off_uωz+1:off_uωz+nu_z] = mass_z_dt + θ * (data.visc_z_ω + ρ_val * bulk[3] - 0.5 * ρ_val * K_adv[3])
+    J[row_uωz+1:row_uωz+nu_z, off_uγz+1:off_uγz+nu_z] = θ * data.visc_z_γ
+    J[row_uωz+1:row_uωz+nu_z, off_p+1:off_p+np]       = data.grad_z
+
+    J[row_uγx+1:row_uγx+nu_x, off_uγx+1:off_uγx+nu_x] = data.tie_x
+    J[row_uγy+1:row_uγy+nu_y, off_uγy+1:off_uγy+nu_y] = data.tie_y
+    J[row_uγz+1:row_uγz+nu_z, off_uγz+1:off_uγz+nu_z] = data.tie_z
+
+    con_rows = row_con+1:row_con+np
+    J[con_rows, off_uωx+1:off_uωx+nu_x] = data.div_x_ω
+    J[con_rows, off_uγx+1:off_uγx+nu_x] = data.div_x_γ
+    J[con_rows, off_uωy+1:off_uωy+nu_y] = data.div_y_ω
+    J[con_rows, off_uγy+1:off_uγy+nu_y] = data.div_y_γ
+    J[con_rows, off_uωz+1:off_uωz+nu_z] = data.div_z_ω
+    J[con_rows, off_uγz+1:off_uγz+nu_z] = data.div_z_γ
+
+    return J
+end
 
 function compute_navierstokes1D_residual!(s::NavierStokesMono, data, x_state::AbstractVector{<:Real})
     nu = data.nu
