@@ -28,7 +28,9 @@ abstract type AbstractMesh end
     Mesh{N}(n::NTuple{N, Int}, domain_size::NTuple{N, Float64}, x0::NTuple{N, Float64}=ntuple(_ -> 0.0, N))
 
 Create a mesh object with `N` dimensions, `n` cells in each dimension, and a domain size of `domain_size`.
-The mesh uses a cell-centered discretization: |--x--|--x--|--x--| where x represents cell centers, | represents cell boundaries (nodes).
+The mesh uses a cell-centered discretization where the domain [x0, x0+domain_size] is divided into n 
+uniformly spaced cells. Diagram: |--x--|--x--|--x--| where x represents cell centers at the midpoint 
+of each cell, | represents cell boundaries (nodes/faces).
 
 # Arguments
 - `n::NTuple{N, Int}`: A tuple of integers specifying the number of cells in each dimension.
@@ -37,8 +39,15 @@ The mesh uses a cell-centered discretization: |--x--|--x--|--x--| where x repres
 
 # Returns
 - A `Mesh{N}` object with `N` dimensions, `n` cells in each dimension, and a domain size of `domain_size`.
-  - `centers`: Cell center coordinates (at the midpoint of each cell)
-  - `nodes`: Cell boundary coordinates (faces between cells)
+  - `centers`: Cell center coordinates (at x0 + (i+0.5)*h for cell i, where h = domain_size/n)
+  - `nodes`: Cell boundary coordinates (at x0 + i*h for boundary i, where i = 0, 1, ..., n)
+
+# Example
+For a 1D mesh with n=5, domain_size=1.0, x0=0.0:
+- Domain spans [0.0, 1.0]
+- Cell width h = 0.2
+- centers = [0.1, 0.3, 0.5, 0.7, 0.9] (midpoints of 5 cells)
+- nodes = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0] (6 boundaries between cells)
 """
 struct Mesh{N} <: AbstractMesh
     centers::NTuple{N, Vector{Float64}}
