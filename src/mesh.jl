@@ -28,7 +28,7 @@ abstract type AbstractMesh end
     Mesh{N}(n::NTuple{N, Int}, domain_size::NTuple{N, Float64}, x0::NTuple{N, Float64}=ntuple(_ -> 0.0, N))
 
 Create a mesh object with `N` dimensions, `n` cells in each dimension, and a domain size of `domain_size`.
-x--|--x--|--x with x representing cell centers, | representing cell boundaries.
+The mesh uses a cell-centered discretization: |--x--|--x--|--x--| where x represents cell centers, | represents cell boundaries (nodes).
 
 # Arguments
 - `n::NTuple{N, Int}`: A tuple of integers specifying the number of cells in each dimension.
@@ -37,6 +37,8 @@ x--|--x--|--x with x representing cell centers, | representing cell boundaries.
 
 # Returns
 - A `Mesh{N}` object with `N` dimensions, `n` cells in each dimension, and a domain size of `domain_size`.
+  - `centers`: Cell center coordinates (at the midpoint of each cell)
+  - `nodes`: Cell boundary coordinates (faces between cells)
 """
 struct Mesh{N} <: AbstractMesh
     centers::NTuple{N, Vector{Float64}}
