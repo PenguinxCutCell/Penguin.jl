@@ -13,7 +13,7 @@ mesh = Penguin.Mesh((nx,), (lx,), (x0,))
 # Define the body
 center = 0.5
 radius = 0.1
-body = (x, _=0) -> sqrt((x-center)^2) - radius
+body = (x, _=0) -> -1.0
 
 # Define the capacity
 capacity = Capacity(body, mesh)
@@ -22,18 +22,18 @@ capacity = Capacity(body, mesh)
 operator = DiffusionOps(capacity)
 
 # Redefine W and V : Rebuild the operator
-operator = DiffusionOps(capacity)
+#operator = DiffusionOps(capacity)
 
 #volume_redefinition!(capacity, operator)
-operator = DiffusionOps(capacity)
+#operator = DiffusionOps(capacity)
 # Define the boundary conditions
 bc = Dirichlet(0.0)
 bc1 = Dirichlet(0.0)
 
-bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:top => bc1, :bottom => bc1))
+bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:top => Dirichlet(1.0), :bottom => Dirichlet(0.0)))
 
 # Define the source term
-g = (x, y, _=0) -> x
+g = (x, y, _=0) -> 0.0
 a = (x, y, _=0) -> 1.0
 
 Fluide = Phase(capacity, operator, g, a)
@@ -45,13 +45,23 @@ solver = DiffusionSteadyMono(Fluide, bc_b, bc)
 solve_DiffusionSteadyMono!(solver; method=Base.:\)
 
 # Plot the solution
-plot_solution(solver, mesh, body, capacity)
+#plot_solution(solver, mesh, body, capacity)
 
 # Analytical solution
 a, b = center - radius, center + radius
-u_analytical = (x) -> - (x-center)^3/6 - (center*(x-center)^2)/2 + radius^2/6 * (x-center) + center*radius^2/2
+u_analytical = (x) -> x
 
 u_ana, u_num, global_err, full_err, cut_err, empty_err = check_convergence(u_analytical, solver, capacity, 2)
+
+# Plot the numerical and analytical solutions
+using CairoMakie
+fig = Figure()
+ax = Axis(fig[1, 1], xlabel="x", ylabel="u",)
+scatter!(ax, mesh.centers[1], u_num[1:end-1], label="Numerical Solution")
+lines!(ax, mesh.centers[1], u_ana[1:end-1], label="Analytical Solution (from check_convergence)")
+lines!(ax, mesh.centers[1], u_analytical.(range(x0, lx, length=nx)), linestyle=:dash, color=:red, label="Analytical Solution (function)")
+Legend(fig[1, 2], ax; orientation = :vertical)
+display(fig)  
 
 # Plot the error
 err = u_ana - u_num

@@ -185,6 +185,12 @@ function solve_system!(s::Solver; method::Function=gmres, algorithm=nothing, kwa
     # Reconstruct the full solution vector regardless of solver type
     s.x = zeros(n)
     s.x[cols_idx] = x_reduced
+    
+    # Reconstruct the full matrix A and vector b
+    s.A = spzeros(n, n)
+    s.A[cols_idx, cols_idx] = A_reduced
+    s.b = zeros(n)
+    s.b[cols_idx] = b_reduced
 end
 
 """
