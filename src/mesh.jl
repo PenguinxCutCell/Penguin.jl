@@ -46,8 +46,8 @@ struct Mesh{N} <: AbstractMesh
 
     function Mesh(n::NTuple{N, Int}, domain_size::NTuple{N, Float64}, x0::NTuple{N, Float64}=ntuple(_ -> 0.0, N)) where N
         # Calculate centers and nodes
-        centers_uniform = ntuple(i -> [x0[i] + j * (domain_size[i] / n[i]) for j in 0:n[i]-1], N)
-        nodes_uniform = ntuple(i -> [x0[i] + (j + 0.5) * (domain_size[i] / n[i]) for j in 0:(n[i])], N)
+        centers_uniform = ntuple(i -> [x0[i] + (j + 0.5) * (domain_size[i] / n[i]) for j in 0:n[i]-1], N)
+        nodes_uniform = ntuple(i -> [x0[i] + j * (domain_size[i] / n[i]) for j in 0:(n[i])], N)
         
         # Calculate border cells directly from centers
         dims = ntuple(i -> length(centers_uniform[i]), N)
