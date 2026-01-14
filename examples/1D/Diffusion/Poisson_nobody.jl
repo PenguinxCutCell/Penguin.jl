@@ -2,9 +2,9 @@ using Penguin
 using IterativeSolvers
 using LinearAlgebra, SparseArrays
 
-### 1D Test Case : Monophasic Steady Diffusion Equation
+### 1D Test Case : Monophasic Steady Diffusion Equation with MMS
 # Define the mesh
-nx = 10
+nx = 40
 lx = 1.
 x0 = 0.
 Δx = lx / nx
@@ -22,20 +22,19 @@ capacity = Capacity(body, mesh; compute_centroids=false)
 # Define the operators
 operator = DiffusionOps(capacity)
 
-# Redefine W and V : Rebuild the operator
-#operator = DiffusionOps(capacity)
+# Exact solution: u(x) = sin(π*(x-Δx/2)/(lx-Δx))
+# This gives u = 0 at x = Δx/2 (first cell center) and u = 0 at x = lx - Δx/2 (last cell center)
+u_exact = (x) -> sin(π * (x - Δx) / (lx - Δx))
 
-#volume_redefinition!(capacity, operator)
-#operator = DiffusionOps(capacity)
-# Define the boundary conditions
+# Source term: f = λ * u_exact, where λ = (π/(lx-Δx))²
+λ = (π / (lx - Δx))^2
+g = (x, y, _=0) -> λ * u_exact(x)
+a = (x, y, _=0) -> 1.0
+
+# Boundary conditions: Homogeneous Dirichlet (u = 0 on boundaries)
 bc = Dirichlet(0.0)
 bc1 = Dirichlet(0.0)
-
-bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:top => Dirichlet(1.0), :bottom => Dirichlet(0.0)))
-
-# Define the source term
-g = (x, y, _=0) -> 0.0
-a = (x, y, _=0) -> 1.0
+bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:top => Dirichlet(0.0), :bottom => Dirichlet(0.0)))
 
 Fluide = Phase(capacity, operator, g, a)
 
@@ -45,12 +44,8 @@ solver = DiffusionSteadyMono(Fluide, bc_b, bc)
 # Solve the problem
 solve_DiffusionSteadyMono!(solver; method=Base.:\)
 
-# Plot the solution
-#plot_solution(solver, mesh, body, capacity)
-
 # Analytical solution
-a, b = center - radius, center + radius
-u_analytical = (x) -> (x-lx/nx)/(lx - lx/nx)
+u_analytical = u_exact
 
 u_ana, u_num, global_err, full_err, cut_err, empty_err = check_convergence(u_analytical, solver, capacity, 2)
 
@@ -60,7 +55,7 @@ fig = Figure()
 ax = Axis(fig[1, 1], xlabel="x", ylabel="u",)
 scatter!(ax, mesh.centers[1], u_num[1:end-1], label="Numerical Solution")
 lines!(ax, mesh.centers[1], u_ana[1:end-1], label="Analytical Solution (from check_convergence)")
-lines!(ax, mesh.centers[1], u_analytical.(range(x0, lx, length=nx)), linestyle=:dash, color=:red, label="Analytical Solution (function)")
+lines!(ax, mesh.centers[1], u_analytical.(mesh.centers[1]), linestyle=:dash, color=:red, label="Analytical Solution (function)")
 Legend(fig[1, 2], ax; orientation = :vertical)
 display(fig)  
 
@@ -70,5 +65,5 @@ err[capacity.cell_types .== 0] .= NaN
 using CairoMakie
 fig = Figure()
 ax = Axis(fig[1, 1], xlabel="x", ylabel="Log10 of the error", title="Monophasic Steady Diffusion Equation")
-scatter!(ax, log10.(abs.(err)), label="Log10 of the error")
+scatter!(ax, mesh.centers[1], log10.(abs.(err[1:nx])), label="Log10 of the error")
 display(fig)
