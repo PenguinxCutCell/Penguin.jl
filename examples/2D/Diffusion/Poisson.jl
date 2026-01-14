@@ -6,7 +6,7 @@ using LinearSolve
 nx, ny = 320, 320
 lx, ly = 4., 4.
 x0, y0 = 0., 0.
-mesh = Mesh((nx, ny), (lx, ly), (x0, y0))
+mesh = Penguin.Mesh((nx, ny), (lx, ly), (x0, y0))
 
 LS(x,y,_=0) = (sqrt((x-2)^2 + (y-2)^2) - 1.0) 
 

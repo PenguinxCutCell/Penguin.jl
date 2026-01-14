@@ -7,6 +7,7 @@ using LinearAlgebra, SparseArrays
 nx = 10
 lx = 1.
 x0 = 0.
+Δx = lx / nx
 domain = ((x0, lx),)
 mesh = Penguin.Mesh((nx,), (lx,), (x0,))
 
@@ -16,7 +17,7 @@ radius = 0.1
 body = (x, _=0) -> -1.0
 
 # Define the capacity
-capacity = Capacity(body, mesh)
+capacity = Capacity(body, mesh; compute_centroids=false)
 
 # Define the operators
 operator = DiffusionOps(capacity)
@@ -49,7 +50,7 @@ solve_DiffusionSteadyMono!(solver; method=Base.:\)
 
 # Analytical solution
 a, b = center - radius, center + radius
-u_analytical = (x) -> x
+u_analytical = (x) -> (x-lx/nx)/(lx - lx/nx)
 
 u_ana, u_num, global_err, full_err, cut_err, empty_err = check_convergence(u_analytical, solver, capacity, 2)
 
