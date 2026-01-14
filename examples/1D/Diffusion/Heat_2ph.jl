@@ -340,23 +340,23 @@ for (idx, He_val) in enumerate(He_values)
     u1_ana[capacity.cell_types .== 0] .= NaN
     u2_ana[capacity_c.cell_types .== 0] .= NaN
 
+    # Plot analytical solution (both phases with same style)
     lines!(ax_multi, x_nodes, u1_ana;
            color = color, linestyle = :solid,
-           label = "λ=$(He_val) p1 analytic")
+           label = "λ=$(He_val) analytic")
+    lines!(ax_multi, x_nodes, u2_ana;
+           color = color, linestyle = :solid)
+    
+    # Plot numerical solution (both phases with same style)
     scatter!(ax_multi, x_nodes, u1_num;
              color = color, markersize = 3, marker = :circle,
-             label = "λ=$(He_val) p1 numerical")
-
-    lines!(ax_multi, x_nodes, u2_ana;
-           color = color, linestyle = :dash,
-           label = "λ=$(He_val) p2 analytic")
+             label = "λ=$(He_val) numerical")
     scatter!(ax_multi, x_nodes, u2_num;
-             color = color, markersize = 3, marker = :x,
-             label = "λ=$(He_val) p2 numerical")
+             color = color, markersize = 3, marker = :circle)
 end
 
 vlines!(ax_multi, [xint]; color = :black, linestyle = :dot, linewidth = 2, label = "Interface")
 
 axislegend(ax_multi, position = :rb, nbanks = 2)
 display(fig_multi)
-save("diphasic_diffusion_multiple_λ.png", fig_multi)
+save("diphasic_diffusion_multiple_λ.pdf", fig_multi)
