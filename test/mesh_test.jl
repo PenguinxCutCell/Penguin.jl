@@ -30,7 +30,7 @@ end
     @test length(borders2D) == 16
     @test borders2D[1][1] == CartesianIndex((1, 1))
     @test all(isapprox.(borders2D[1][2], (0.1, 0.1)))
-    @test borders2D[2][1] == CartesianIndex(1, 2)
+    @test borders2D[2][1] == CartesianIndex((1, 2))
     @test all(isapprox.(borders2D[2][2], (0.1, 0.3)))
 end
 
