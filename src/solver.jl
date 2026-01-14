@@ -272,6 +272,79 @@ function build_I_D(operator::AbstractOperators, D::Union{Float64,Function}, capa
 end
 
 """
+    build_I_D_harmonic(operator::AbstractOperators, D::Union{Float64,Function}, capacite::Capacity)
+
+Build a diffusion matrix using harmonic means at faces for variable coefficients.
+"""
+function build_I_D_harmonic(operator::AbstractOperators, D::Union{Float64,Function}, capacite::Capacity)
+    n = prod(operator.size)
+    n_dims = length(operator.size)
+
+    if D isa Function
+        coords = get_all_coordinates(capacite.C_ω)
+        k_vec = [D(coord...) for coord in coords]
+        k_cell = reshape(k_vec, operator.size)
+        k_faces = Vector{Float64}(undef, n_dims * n)
+
+        offset = 0
+        for d in 1:n_dims
+            k_face = similar(k_cell)
+            for idx in CartesianIndices(k_cell)
+                if idx[d] == 1
+                    k_face[idx] = k_cell[idx]
+                else
+                    idx_minus = CartesianIndex(ntuple(i -> i == d ? idx[i] - 1 : idx[i], n_dims))
+                    denom = k_cell[idx] + k_cell[idx_minus]
+                    k_face[idx] = denom == 0.0 ? 0.0 : 2.0 * k_cell[idx] * k_cell[idx_minus] / denom
+                end
+            end
+            k_faces[offset+1:offset+n] = vec(k_face)
+            offset += n
+        end
+
+        return spdiagm(0 => k_faces)
+    else
+        return D * I(n * n_dims)
+    end
+end
+
+"""
+    build_I_D_arithmetic(operator::AbstractOperators, D::Union{Float64,Function}, capacite::Capacity)
+
+Build a diffusion matrix using arithmetic means at faces for variable coefficients.
+"""
+function build_I_D_arithmetic(operator::AbstractOperators, D::Union{Float64,Function}, capacite::Capacity)
+    n = prod(operator.size)
+    n_dims = length(operator.size)
+
+    if D isa Function
+        coords = get_all_coordinates(capacite.C_ω)
+        k_vec = [D(coord...) for coord in coords]
+        k_cell = reshape(k_vec, operator.size)
+        k_faces = Vector{Float64}(undef, n_dims * n)
+
+        offset = 0
+        for d in 1:n_dims
+            k_face = similar(k_cell)
+            for idx in CartesianIndices(k_cell)
+                if idx[d] == 1
+                    k_face[idx] = k_cell[idx]
+                else
+                    idx_minus = CartesianIndex(ntuple(i -> i == d ? idx[i] - 1 : idx[i], n_dims))
+                    k_face[idx] = 0.5 * (k_cell[idx] + k_cell[idx_minus])
+                end
+            end
+            k_faces[offset+1:offset+n] = vec(k_face)
+            offset += n
+        end
+
+        return spdiagm(0 => k_faces)
+    else
+        return D * I(n * n_dims)
+    end
+end
+
+"""
     build_source(operator::AbstractOperators, f::Function, capacite::Capacity)
 
 Optimized source term construction without loops.

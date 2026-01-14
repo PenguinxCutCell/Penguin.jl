@@ -52,13 +52,14 @@ export lin_interpol, quad_interpol, cubic_interpol
 include("solver.jl")
 export TimeType, PhaseType, EquationType
 export Solver, solve_system!
-export build_I_bc, build_I_D, build_source, build_g_g
+export build_I_bc, build_I_D, build_I_D_harmonic, build_I_D_arithmetic, build_source, build_g_g
 export BC_border_mono!, BC_border_diph!
 export cfl_restriction
 export remove_zero_rows_cols!, remove_zero_rows_cols_separate!
 
 include("solver/diffusion.jl")
 export DiffusionSteadyMono, solve_DiffusionSteadyMono!
+export DiffusionSteadyMonoVariable
 export DiffusionSteadyDiph, solve_DiffusionSteadyDiph!
 export DiffusionUnsteadyMono, solve_DiffusionUnsteadyMono!
 export DiffusionUnsteadyDiph, solve_DiffusionUnsteadyDiph!

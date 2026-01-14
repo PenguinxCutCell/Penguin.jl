@@ -27,6 +27,28 @@ function DiffusionSteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::Abstrac
     return s
 end
 
+"""
+    DiffusionSteadyMonoVariable(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary; mean::Symbol = :harmonic)
+
+Create a solver for a steady-state monophasic diffusion problem with variable diffusion coefficient.
+"""
+function DiffusionSteadyMonoVariable(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary; mean::Symbol = :harmonic)
+    println("Solver creation:")
+    println("- Monophasic problem")
+    println("- Steady problem")
+    println("- Diffusion problem")
+    println("- Variable diffusion coefficient")
+
+    s = Solver(Steady, Monophasic, Diffusion, nothing, nothing, nothing, [], [])
+
+    s.A = A_mono_stead_diff_variable(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i; mean=mean)
+    s.b = b_mono_stead_diff(phase.operator, phase.source, phase.capacity, bc_i)
+
+    BC_border_mono!(s.A, s.b, bc_b, phase.capacity.mesh)
+
+    return s
+end
+
 function A_mono_stead_diff(operator::DiffusionOps, capacity::Capacity, D, bc::AbstractBoundary)
     n = prod(operator.size)
     Iₐ, Iᵦ = build_I_bc(operator, bc)
@@ -37,6 +59,27 @@ function A_mono_stead_diff(operator::DiffusionOps, capacity::Capacity, D, bc::Ab
     A2 = Id * operator.G' * operator.Wꜝ * operator.H
     A3 = Iᵦ * operator.H' * operator.Wꜝ * operator.G
     A4 = Iᵦ * operator.H' * operator.Wꜝ * operator.H + Iₐ * Iᵧ
+
+    A = vcat(hcat(A1, A2), hcat(A3, A4))
+    return A
+end
+
+function A_mono_stead_diff_variable(operator::DiffusionOps, capacity::Capacity, D, bc::AbstractBoundary; mean::Symbol = :harmonic)
+    n = prod(operator.size)
+    Iₐ, Iᵦ = build_I_bc(operator, bc)
+    Iᵧ = capacity.Γ
+    Id = if mean == :harmonic
+        build_I_D_harmonic(operator, D, capacity)
+    elseif mean == :arithmetic
+        build_I_D_arithmetic(operator, D, capacity)
+    else
+        error("Unknown mean $(mean). Use :harmonic or :arithmetic.")
+    end
+
+    A1 = operator.G' * Id * operator.Wꜝ * operator.G
+    A2 = operator.G' * Id * operator.Wꜝ * operator.H
+    A3 = Iᵦ * operator.H' * Id * operator.Wꜝ * operator.G
+    A4 = Iᵦ * operator.H' * Id * operator.Wꜝ * operator.H + Iₐ * Iᵧ
 
     A = vcat(hcat(A1, A2), hcat(A3, A4))
     return A
