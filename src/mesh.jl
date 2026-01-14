@@ -28,7 +28,9 @@ abstract type AbstractMesh end
     Mesh{N}(n::NTuple{N, Int}, domain_size::NTuple{N, Float64}, x0::NTuple{N, Float64}=ntuple(_ -> 0.0, N))
 
 Create a mesh object with `N` dimensions, `n` cells in each dimension, and a domain size of `domain_size`.
-x--|--x--|--x with x representing cell centers, | representing cell boundaries.
+The mesh uses a cell-centered finite volume discretization where the domain [x0, x0+domain_size] is divided 
+into n uniformly spaced cells. Diagram: |--x--|--x--|--x--| where x represents cell centers at the midpoint 
+of each cell, | represents cell boundaries (nodes/faces).
 
 # Arguments
 - `n::NTuple{N, Int}`: A tuple of integers specifying the number of cells in each dimension.
@@ -37,6 +39,16 @@ x--|--x--|--x with x representing cell centers, | representing cell boundaries.
 
 # Returns
 - A `Mesh{N}` object with `N` dimensions, `n` cells in each dimension, and a domain size of `domain_size`.
+  - `centers`: Cell center coordinates (at x0 + (i+0.5)*h for cell i, where h = domain_size/n)
+  - `nodes`: Cell boundary coordinates (at x0 + i*h for boundary i, where i = 0, 1, ..., n)
+
+# Example
+For a 1D mesh with n=10, domain_size=1.0, x0=0.0:
+- Domain spans [0.0, 1.0]
+- Cell width h = 0.1
+- centers = [0.05, 0.15, 0.25, ..., 0.95] (10 cell centers)
+- nodes = [0.0, 0.1, 0.2, ..., 1.0] (11 boundaries)
+- CartesianGeometry C_ω = centers for full cells
 """
 struct Mesh{N} <: AbstractMesh
     centers::NTuple{N, Vector{Float64}}
@@ -46,8 +58,10 @@ struct Mesh{N} <: AbstractMesh
 
     function Mesh(n::NTuple{N, Int}, domain_size::NTuple{N, Float64}, x0::NTuple{N, Float64}=ntuple(_ -> 0.0, N)) where N
         # Calculate centers and nodes
-        centers_uniform = ntuple(i -> [x0[i] + j * (domain_size[i] / n[i]) for j in 0:n[i]-1], N)
-        nodes_uniform = ntuple(i -> [x0[i] + (j + 0.5) * (domain_size[i] / n[i]) for j in 0:(n[i])], N)
+        # centers: cell centers at midpoints (x0 + (j+0.5)*h for j=0:n-1)
+        # nodes: cell boundaries/faces (x0 + j*h for j=0:n)
+        centers_uniform = ntuple(i -> [x0[i] + (j + 0.5) * (domain_size[i] / n[i]) for j in 0:n[i]-1], N)
+        nodes_uniform = ntuple(i -> [x0[i] + j * (domain_size[i] / n[i]) for j in 0:(n[i])], N)
         
         # Calculate border cells directly from centers
         dims = ntuple(i -> length(centers_uniform[i]), N)
