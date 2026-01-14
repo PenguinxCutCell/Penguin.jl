@@ -2,9 +2,28 @@ using Penguin
 using IterativeSolvers
 using LinearAlgebra, SparseArrays
 
+function make_shift_map(nx, L, x0; shift_left::Bool=true)
+    d = length(nx)
+    Δ   = ntuple(i -> L[i] / nx[i], d)
+    xL  = ntuple(i -> x0[i] + (shift_left ? Δ[i] : 0.0), d)
+    Leff = ntuple(i -> L[i] - (shift_left ? Δ[i] : 0.0), d)
+
+    map_to_unit = function (x)
+        ntuple(i -> (x[i] - xL[i]) / Leff[i], d)
+    end
+
+    return map_to_unit, xL, Leff, Δ
+end
+
+wrap_u(u_hat, map_to_unit) = function (x...)
+    ξ = map_to_unit(ntuple(i -> x[i], length(x)))
+    return u_hat(ξ...)
+end
+
+
 ### 1D Test Case : Monophasic Steady Diffusion Equation with MMS
 # Define the mesh
-nx = 40
+nx = 10
 lx = 1.
 x0 = 0.
 Δx = lx / nx
@@ -22,12 +41,14 @@ capacity = Capacity(body, mesh; compute_centroids=false)
 # Define the operators
 operator = DiffusionOps(capacity)
 
-# Exact solution: u(x) = sin(π*(x-Δx/2)/(lx-Δx))
-# This gives u = 0 at x = Δx/2 (first cell center) and u = 0 at x = lx - Δx/2 (last cell center)
-u_exact = (x) -> sin(π * (x - Δx) / (lx - Δx))
+map_to_unit, xL_tuple, Leff_tuple, Δ_tuple = make_shift_map((nx,), (lx,), (x0,); shift_left=true)
+# define û on [0,1]
+u_hat = ξ -> sin(pi * ξ[1])
+# physical exact solution
+u_exact = wrap_u(u_hat, map_to_unit)
 
 # Source term: f = λ * u_exact, where λ = (π/(lx-Δx))²
-λ = (π / (lx - Δx))^2
+λ = (pi/Leff_tuple[1])^2
 g = (x, y, _=0) -> λ * u_exact(x)
 a = (x, y, _=0) -> 1.0
 

@@ -4,13 +4,32 @@ using Printf
 using Statistics
 
 # ---------------------------------------------------------
-# 2D MMS Poisson, homogeneous Dirichlet on all borders
-# u_exact = sin(pi*(x-Δx)/(Lx-Δx)) * sin(pi*(y-Δy)/(Ly-Δy))
-# -Δu = f = ( (pi/(Lx-Δx))^2 + (pi/(Ly-Δy))^2 ) * u_exact
+# 2D MMS Poisson on full domain (no body), with shift map
+# u_hat(ξ) = sin(pi*ξ1) * sin(pi*ξ2), ξ in [0,1]^2
+# u_exact(x) = u_hat(map_to_unit(x))
+# -Δu = f = ( (pi/Leff[1])^2 + (pi/Leff[2])^2 ) * u_exact
 # ---------------------------------------------------------
 
+function make_shift_map(nx, L, x0; shift_left::Bool=true)
+    d = length(nx)
+    Δ   = ntuple(i -> L[i] / nx[i], d)
+    xL  = ntuple(i -> x0[i] + (shift_left ? Δ[i] : 0.0), d)
+    Leff = ntuple(i -> L[i] - (shift_left ? Δ[i] : 0.0), d)
+
+    map_to_unit = function (x)
+        ntuple(i -> (x[i] - xL[i]) / Leff[i], d)
+    end
+
+    return map_to_unit, xL, Leff, Δ
+end
+
+wrap_u(u_hat, map_to_unit) = function (x...)
+    ξ = map_to_unit(ntuple(i -> x[i], length(x)))
+    return u_hat(ξ...)
+end
+
 function run_mms_convergence_2d(nx_list; lx=1.0, ly=1.0, x0=0.0, y0=0.0,
-                                method_capacity="ImplicitIntegration",
+                                method_capacity="VOFI",
                                 solver_alg=KrylovJL_GMRES())
 
     h_vals   = Float64[]
@@ -18,11 +37,6 @@ function run_mms_convergence_2d(nx_list; lx=1.0, ly=1.0, x0=0.0, y0=0.0,
 
     for nx in nx_list
         ny = nx
-        Δx = lx/nx
-        Δy = ly/ny
-        lx_eff = lx - Δx
-        ly_eff = ly - Δy
-
         mesh = Penguin.Mesh((nx, ny), (lx, ly), (x0, y0))
 
         # Full domain
@@ -31,17 +45,21 @@ function run_mms_convergence_2d(nx_list; lx=1.0, ly=1.0, x0=0.0, y0=0.0,
         capacity = Capacity(body, mesh; method=method_capacity, compute_centroids=false)
         operator = DiffusionOps(capacity)
 
-        # MMS exact (aligned with your 1D convention)
-        u_exact(x,y) = sin(pi*(x - Δx)/lx_eff) * sin(pi*(y - Δy)/ly_eff)
+        map_to_unit, xL, Leff, Δ = make_shift_map((nx, ny), (lx, ly), (x0, y0); shift_left=true)
+        u_hat = (ξ1, ξ2) -> sin(pi * ξ1) * sin(pi * ξ2)
+        u_exact = wrap_u(u_hat, map_to_unit)
 
-        λx = (pi/lx_eff)^2
-        λy = (pi/ly_eff)^2
-        f(x,y,_=0) = (λx + λy) * u_exact(x,y)
+        λ = (pi/Leff[1])^2 + (pi/Leff[2])^2
+        f(x, y, _=0) = λ * u_exact(x, y)
         D(x,y,_=0) = 1.0
 
-        # Homogeneous Dirichlet everywhere
         bc0 = Dirichlet(0.0)
-        bc_b = BorderConditions(Dict(:left=>bc0, :right=>bc0, :bottom=>bc0, :top=>bc0))
+        bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(
+            :left   => Dirichlet((y, _=0) -> u_exact(xL[1], y)),
+            :right  => Dirichlet((y, _=0) -> u_exact(x0 + lx, y)),
+            :bottom => Dirichlet((x, _=0) -> u_exact(x, xL[2])),
+            :top    => Dirichlet((x, _=0) -> u_exact(x, y0 + ly)),
+        ))
 
         phase  = Phase(capacity, operator, f, D)
         solver = DiffusionSteadyMono(phase, bc_b, bc0)
