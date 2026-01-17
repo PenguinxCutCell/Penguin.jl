@@ -116,7 +116,7 @@ function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true
     if compute_centroids
         if N in (1, 2, 3)
             # use precomputed bary_interface from CartesianGeometry.integrate
-            C_γ = computeInterfaceCentroids(mesh, body)
+            C_γ = bary_interface #computeInterfaceCentroids(mesh, body)
         elseif N == 4
             # fallback to explicit computation for 4D
             C_γ = computeInterfaceCentroids(mesh, body)
@@ -127,7 +127,7 @@ function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true
     else
         C_γ = Vector{SVector{N,Float64}}(undef, 0)
     end
-    #C_γ = bary_interface
+    #C_γ = 
     return A, B, V, W, C_ω, C_γ, Γ, cell_types
 end
 

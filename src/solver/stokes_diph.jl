@@ -874,12 +874,12 @@ function assemble_unsteady_stokes2D_diph!(s::StokesDiph,
     A = spzeros(Float64, rows, cols)
 
     # Phase 1 momentum
-    A[row_a_momx+1:row_a_momx+nu_ax, off_a_uωx+1:off_a_uωx+nu_ax] = mass_ax_dt - θ * data_a.visc_x_ω
-    A[row_a_momx+1:row_a_momx+nu_ax, off_a_uγx+1:off_a_uγx+nu_ax] = -θ * data_a.visc_x_γ
+    A[row_a_momx+1:row_a_momx+nu_ax, off_a_uωx+1:off_a_uωx+nu_ax] = mass_ax_dt + θ * data_a.visc_x_ω
+    A[row_a_momx+1:row_a_momx+nu_ax, off_a_uγx+1:off_a_uγx+nu_ax] = +θ * data_a.visc_x_γ
     A[row_a_momx+1:row_a_momx+nu_ax, off_a_p+1:off_a_p+np_a]       = data_a.grad_x
 
-    A[row_a_momy+1:row_a_momy+nu_ay, off_a_uωy+1:off_a_uωy+nu_ay] = mass_ay_dt - θ * data_a.visc_y_ω
-    A[row_a_momy+1:row_a_momy+nu_ay, off_a_uγy+1:off_a_uγy+nu_ay] = -θ * data_a.visc_y_γ
+    A[row_a_momy+1:row_a_momy+nu_ay, off_a_uωy+1:off_a_uωy+nu_ay] = mass_ay_dt + θ * data_a.visc_y_ω
+    A[row_a_momy+1:row_a_momy+nu_ay, off_a_uγy+1:off_a_uγy+nu_ay] = +θ * data_a.visc_y_γ
     A[row_a_momy+1:row_a_momy+nu_ay, off_a_p+1:off_a_p+np_a]      = data_a.grad_y
 
     # Interface scalar jump (defaults to continuity) for uγ
@@ -904,12 +904,12 @@ function assemble_unsteady_stokes2D_diph!(s::StokesDiph,
     A[con1_rows, off_a_uγy+1:off_a_uγy+nu_ay] = data_a.div_y_γ
 
     # Phase 2 momentum
-    A[row_b_momx+1:row_b_momx+nu_bx, off_b_uωx+1:off_b_uωx+nu_bx] = mass_bx_dt - θ * data_b.visc_x_ω
-    A[row_b_momx+1:row_b_momx+nu_bx, off_b_uγx+1:off_b_uγx+nu_bx] = -θ * data_b.visc_x_γ
+    A[row_b_momx+1:row_b_momx+nu_bx, off_b_uωx+1:off_b_uωx+nu_bx] = mass_bx_dt + θ * data_b.visc_x_ω
+    A[row_b_momx+1:row_b_momx+nu_bx, off_b_uγx+1:off_b_uγx+nu_bx] = +θ * data_b.visc_x_γ
     A[row_b_momx+1:row_b_momx+nu_bx, off_b_p+1:off_b_p+np_b]      = data_b.grad_x
 
-    A[row_b_momy+1:row_b_momy+nu_by, off_b_uωy+1:off_b_uωy+nu_by] = mass_by_dt - θ * data_b.visc_y_ω
-    A[row_b_momy+1:row_b_momy+nu_by, off_b_uγy+1:off_b_uγy+nu_by] = -θ * data_b.visc_y_γ
+    A[row_b_momy+1:row_b_momy+nu_by, off_b_uωy+1:off_b_uωy+nu_by] = mass_by_dt + θ * data_b.visc_y_ω
+    A[row_b_momy+1:row_b_momy+nu_by, off_b_uγy+1:off_b_uγy+nu_by] = +θ * data_b.visc_y_γ
     A[row_b_momy+1:row_b_momy+nu_by, off_b_p+1:off_b_p+np_b]      = data_b.grad_y
 
     # Traction jump (flux) β₁ T¹ + β₂ T² = h
@@ -1058,8 +1058,8 @@ function assemble_unsteady_stokes1D_diph!(s::StokesDiph,
     A = spzeros(Float64, rows, cols)
 
     # Phase 1 momentum
-    A[row_a_momx+1:row_a_momx+nu, off_a_uωx+1:off_a_uωx+nu] = mass_ax_dt - θ * data_a.visc_x_ω
-    A[row_a_momx+1:row_a_momx+nu, off_a_uγx+1:off_a_uγx+nu] = -θ * data_a.visc_x_γ
+    A[row_a_momx+1:row_a_momx+nu, off_a_uωx+1:off_a_uωx+nu] = mass_ax_dt + θ * data_a.visc_x_ω
+    A[row_a_momx+1:row_a_momx+nu, off_a_uγx+1:off_a_uγx+nu] = +θ * data_a.visc_x_γ
     A[row_a_momx+1:row_a_momx+nu, off_a_p+1:off_a_p+np_a]   = data_a.grad_x
 
     # Interface velocity jump/continuity
@@ -1075,8 +1075,8 @@ function assemble_unsteady_stokes1D_diph!(s::StokesDiph,
     A[con1_rows, off_a_uγx+1:off_a_uγx+nu] = data_a.div_x_γ
 
     # Phase 2 momentum
-    A[row_b_momx+1:row_b_momx+nu, off_b_uωx+1:off_b_uωx+nu] = mass_bx_dt - θ * data_b.visc_x_ω
-    A[row_b_momx+1:row_b_momx+nu, off_b_uγx+1:off_b_uγx+nu] = -θ * data_b.visc_x_γ
+    A[row_b_momx+1:row_b_momx+nu, off_b_uωx+1:off_b_uωx+nu] = mass_bx_dt + θ * data_b.visc_x_ω
+    A[row_b_momx+1:row_b_momx+nu, off_b_uγx+1:off_b_uγx+nu] = +θ * data_b.visc_x_γ
     A[row_b_momx+1:row_b_momx+nu, off_b_p+1:off_b_p+np_b]   = data_b.grad_x
 
     # Traction jump β₁T¹ + β₂T² = h
@@ -1203,16 +1203,16 @@ function assemble_unsteady_stokes3D_diph!(s::StokesDiph,
     A = spzeros(Float64, rows, cols)
 
     # Phase 1 momentum
-    A[row_a_momx+1:row_a_momx+nu_ax, off_a_uωx+1:off_a_uωx+nu_ax] = mass_ax_dt - θ * data_a.visc_x_ω
-    A[row_a_momx+1:row_a_momx+nu_ax, off_a_uγx+1:off_a_uγx+nu_ax] = -θ * data_a.visc_x_γ
+    A[row_a_momx+1:row_a_momx+nu_ax, off_a_uωx+1:off_a_uωx+nu_ax] = mass_ax_dt + θ * data_a.visc_x_ω
+    A[row_a_momx+1:row_a_momx+nu_ax, off_a_uγx+1:off_a_uγx+nu_ax] = +θ * data_a.visc_x_γ
     A[row_a_momx+1:row_a_momx+nu_ax, off_a_p+1:off_a_p+np_a]      = data_a.grad_x
 
-    A[row_a_momy+1:row_a_momy+nu_ay, off_a_uωy+1:off_a_uωy+nu_ay] = mass_ay_dt - θ * data_a.visc_y_ω
-    A[row_a_momy+1:row_a_momy+nu_ay, off_a_uγy+1:off_a_uγy+nu_ay] = -θ * data_a.visc_y_γ
+    A[row_a_momy+1:row_a_momy+nu_ay, off_a_uωy+1:off_a_uωy+nu_ay] = mass_ay_dt + θ * data_a.visc_y_ω
+    A[row_a_momy+1:row_a_momy+nu_ay, off_a_uγy+1:off_a_uγy+nu_ay] = +θ * data_a.visc_y_γ
     A[row_a_momy+1:row_a_momy+nu_ay, off_a_p+1:off_a_p+np_a]      = data_a.grad_y
 
-    A[row_a_momz+1:row_a_momz+nu_az, off_a_uωz+1:off_a_uωz+nu_az] = mass_az_dt - θ * data_a.visc_z_ω
-    A[row_a_momz+1:row_a_momz+nu_az, off_a_uγz+1:off_a_uγz+nu_az] = -θ * data_a.visc_z_γ
+    A[row_a_momz+1:row_a_momz+nu_az, off_a_uωz+1:off_a_uωz+nu_az] = mass_az_dt + θ * data_a.visc_z_ω
+    A[row_a_momz+1:row_a_momz+nu_az, off_a_uγz+1:off_a_uγz+nu_az] = +θ * data_a.visc_z_γ
     A[row_a_momz+1:row_a_momz+nu_az, off_a_p+1:off_a_p+np_a]      = data_a.grad_z
 
     # Interface velocity jump/continuity
@@ -1243,16 +1243,16 @@ function assemble_unsteady_stokes3D_diph!(s::StokesDiph,
     A[con1_rows, off_a_uγz+1:off_a_uγz+nu_az] = data_a.div_z_γ
 
     # Phase 2 momentum
-    A[row_b_momx+1:row_b_momx+nu_bx, off_b_uωx+1:off_b_uωx+nu_bx] = mass_bx_dt - θ * data_b.visc_x_ω
-    A[row_b_momx+1:row_b_momx+nu_bx, off_b_uγx+1:off_b_uγx+nu_bx] = -θ * data_b.visc_x_γ
+    A[row_b_momx+1:row_b_momx+nu_bx, off_b_uωx+1:off_b_uωx+nu_bx] = mass_bx_dt + θ * data_b.visc_x_ω
+    A[row_b_momx+1:row_b_momx+nu_bx, off_b_uγx+1:off_b_uγx+nu_bx] = +θ * data_b.visc_x_γ
     A[row_b_momx+1:row_b_momx+nu_bx, off_b_p+1:off_b_p+np_b]      = data_b.grad_x
 
-    A[row_b_momy+1:row_b_momy+nu_by, off_b_uωy+1:off_b_uωy+nu_by] = mass_by_dt - θ * data_b.visc_y_ω
-    A[row_b_momy+1:row_b_momy+nu_by, off_b_uγy+1:off_b_uγy+nu_by] = -θ * data_b.visc_y_γ
+    A[row_b_momy+1:row_b_momy+nu_by, off_b_uωy+1:off_b_uωy+nu_by] = mass_by_dt + θ * data_b.visc_y_ω
+    A[row_b_momy+1:row_b_momy+nu_by, off_b_uγy+1:off_b_uγy+nu_by] = +θ * data_b.visc_y_γ
     A[row_b_momy+1:row_b_momy+nu_by, off_b_p+1:off_b_p+np_b]      = data_b.grad_y
 
-    A[row_b_momz+1:row_b_momz+nu_bz, off_b_uωz+1:off_b_uωz+nu_bz] = mass_bz_dt - θ * data_b.visc_z_ω
-    A[row_b_momz+1:row_b_momz+nu_bz, off_b_uγz+1:off_b_uγz+nu_bz] = -θ * data_b.visc_z_γ
+    A[row_b_momz+1:row_b_momz+nu_bz, off_b_uωz+1:off_b_uωz+nu_bz] = mass_bz_dt + θ * data_b.visc_z_ω
+    A[row_b_momz+1:row_b_momz+nu_bz, off_b_uγz+1:off_b_uγz+nu_bz] = +θ * data_b.visc_z_γ
     A[row_b_momz+1:row_b_momz+nu_bz, off_b_p+1:off_b_p+np_b]      = data_b.grad_z
 
     # Traction jump

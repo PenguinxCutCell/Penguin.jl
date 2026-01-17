@@ -106,14 +106,22 @@ ic_y = InterfaceConditions(ScalarJump(1.0, 1.0, 0.0), flux_jump_y)
 ###########
 # Solve
 ###########
+Δt = 0.25 * min(dx, dy)
+T_end = 0.5
 solver = StokesDiph(fluid_in, fluid_out,
                     (bc_ux_in, bc_uy_in),
                     (bc_ux_out, bc_uy_out),
                     (ic_x, ic_y),
                     pressure_gauges)
-solve_StokesDiph!(solver; algorithm=UMFPACKFactorization())
+times, states = solve_StokesDiph_unsteady!(solver; Δt=Δt, T_end=T_end,
+                                           scheme=:BE, method=Base.:\,
+                                           algorithm=UMFPACKFactorization(),
+                                           store_states=true)
+x_final = states[end]
+solver.x .= x_final  # keep solver.x in sync for downstream reuse
 
 println("Surface-tension Laplace test solved. Unknowns = ", length(solver.x))
+println("Unsteady steps taken: ", length(times) - 1, "  final time: ", times[end])
 
 ###########
 # Extract fields
@@ -124,13 +132,13 @@ sum_nu = nu_x + nu_y
 off_p_in = 2 * sum_nu
 off_phase2 = off_p_in + np_in
 
-u_in_omega_x = solver.x[1:nu_x];         u_in_gamma_x = solver.x[nu_x+1:2nu_x]
-u_in_omega_y = solver.x[2nu_x+1:2nu_x+nu_y]; u_in_gamma_y = solver.x[2nu_x+nu_y+1:2nu_x+2nu_y]
-p_in    = solver.x[off_p_in+1:off_p_in+np_in]
+u_in_omega_x = x_final[1:nu_x];         u_in_gamma_x = x_final[nu_x+1:2nu_x]
+u_in_omega_y = x_final[2nu_x+1:2nu_x+nu_y]; u_in_gamma_y = x_final[2nu_x+nu_y+1:2nu_x+2nu_y]
+p_in    = x_final[off_p_in+1:off_p_in+np_in]
 
-u_out_omega_x = solver.x[off_phase2+1:off_phase2+nu_x];           u_out_gamma_x = solver.x[off_phase2+nu_x+1:off_phase2+2nu_x]
-u_out_omega_y = solver.x[off_phase2+2nu_x+1:off_phase2+2nu_x+nu_y]; u_out_gamma_y = solver.x[off_phase2+2nu_x+nu_y+1:off_phase2+2nu_x+2nu_y]
-p_out   = solver.x[off_phase2+2 * (nu_x + nu_y) + 1:off_phase2+2 * (nu_x + nu_y) + np_out]
+u_out_omega_x = x_final[off_phase2+1:off_phase2+nu_x];           u_out_gamma_x = x_final[off_phase2+nu_x+1:off_phase2+2nu_x]
+u_out_omega_y = x_final[off_phase2+2nu_x+1:off_phase2+2nu_x+nu_y]; u_out_gamma_y = x_final[off_phase2+2nu_x+nu_y+1:off_phase2+2nu_x+2nu_y]
+p_out   = x_final[off_phase2+2 * (nu_x + nu_y) + 1:off_phase2+2 * (nu_x + nu_y) + np_out]
 
 xs = mesh_ux.nodes[1]; ys = mesh_ux.nodes[2]
 xp = mesh_p.nodes[1];  yp = mesh_p.nodes[2]

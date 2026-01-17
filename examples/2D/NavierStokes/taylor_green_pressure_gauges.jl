@@ -126,3 +126,33 @@ Colorbar(fig[1,4], hm2)
 
 save("taylor_green_gauge_divu_border.png", fig)
 println("Saved taylor_green_gauge_divu_border.png")
+
+# Plot pressure fields 
+pin_p_mat = reshape(pin_solver.x[2*(nu_x+nu_y)+1:end], op_p.size)
+mean_p_mat = reshape(mean_solver.x[2*(nu_x+nu_y)+1:end], op_p.size) 
+
+fig = Figure(resolution=(1000, 420))
+ax1 = Axis(fig[1,1], title="PinPressureGauge: pressure", xlabel="x", ylabel="y")
+hm1 = heatmap!(ax1, xs, ys, pin_p_mat'; colormap=:viridis)
+Colorbar(fig[1,2], hm1)
+
+ax2 = Axis(fig[1,3], title="MeanPressureGauge: pressure", xlabel="x")
+hm2 = heatmap!(ax2, xs, ys, mean_p_mat'; colormap=:viridis)
+Colorbar(fig[1,4], hm2)
+save("taylor_green_gauge_pressure_border.png", fig)
+println("Saved taylor_green_gauge_pressure_border.png")
+
+# Plot velocity fields
+pin_uωx_mat = reshape(pin_solver.x[1:nu_x], op_ux.size)
+pin_uωy_mat = reshape(pin_solver.x[2nu_x+1:2nu_x+nu_y], op_uy.size)
+mean_uωx_mat = reshape(mean_solver.x[1:nu_x], op_ux.size)
+mean_uωy_mat = reshape(mean_solver.x[2nu_x+1:2nu_x+nu_y], op_uy.size)
+fig = Figure(resolution=(1000, 420))
+ax1 = Axis(fig[1,1], title="PinPressureGauge: u_ω", xlabel="x", ylabel="y")
+hm1 = heatmap!(ax1, mesh_ux.nodes[1], mesh_ux.nodes[2], pin_uωx_mat'; colormap=:viridis)
+Colorbar(fig[1,2], hm1)
+ax2 = Axis(fig[1,3], title="MeanPressureGauge: u_ω", xlabel="x")
+hm2 = heatmap!(ax2, mesh_ux.nodes[1], mesh_ux.nodes[2], mean_uωx_mat'; colormap=:viridis)
+Colorbar(fig[1,4], hm2)
+save("taylor_green_gauge_u_omega_border.png", fig)
+println("Saved taylor_green_gauge_u_omega_border.png")

@@ -117,21 +117,21 @@ velocity_field(x, y) = Point2f(Ux[nearest_index(xs, x), nearest_index(ys, y)],
 
 fig = Figure(resolution=(1200, 700))
 
-ax_speed = Axis(fig[1,1], xlabel="x", ylabel="y", title="Speed magnitude")
+ax_speed = Axis(fig[1,1], xlabel="x", ylabel="y", title="Speed magnitude", aspect=DataAspect())
 hm_speed = heatmap!(ax_speed, xs, ys, speed; colormap=:plasma)
 contour!(ax_speed, xs, ys, [circle_body(x,y) for x in xs, y in ys]; levels=[0.0], color=:white, linewidth=2)
 Colorbar(fig[1,2], hm_speed)
 
-ax_pressure = Axis(fig[1,3], xlabel="x", ylabel="y", title="Pressure field")
+ax_pressure = Axis(fig[1,3], xlabel="x", ylabel="y", title="Pressure field", aspect=DataAspect())
 hm_pressure = heatmap!(ax_pressure, Xp, Yp, P; colormap=:balance)
 contour!(ax_pressure, xs, ys, [circle_body(x,y) for x in xs, y in ys]; levels=[0.0], color=:white, linewidth=2)
 Colorbar(fig[1,4], hm_pressure)
 
-ax_stream = Axis(fig[2,1], xlabel="x", ylabel="y", title="Velocity streamlines")
+ax_stream = Axis(fig[2,1], xlabel="x", ylabel="y", title="Velocity streamlines", aspect=DataAspect())
 streamplot!(ax_stream, velocity_field, xs[1]..xs[end], ys[1]..ys[end]; colormap=:thermal)
 contour!(ax_stream, xs, ys, [circle_body(x,y) for x in xs, y in ys]; levels=[0.0], color=:red, linewidth=2)
 
-ax_contours = Axis(fig[2,3], xlabel="x", ylabel="y", title="Velocity magnitude contours")
+ax_contours = Axis(fig[2,3], xlabel="x", ylabel="y", title="Velocity magnitude contours", aspect=DataAspect())
 contour!(ax_contours, xs, ys, speed; levels=10, color=:navy)
 contour!(ax_contours, xs, ys, [circle_body(x,y) for x in xs, y in ys]; levels=[0.0], color=:black, linewidth=2)
 
