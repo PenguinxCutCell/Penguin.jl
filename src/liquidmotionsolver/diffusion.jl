@@ -592,6 +592,181 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
 end
 
 
+"""
+    solve_MovingLiquidDiffusionUnsteadyMono_RK2!(s::Solver, phase::Phase, xf, Δt::Float64, Tₛ::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh::AbstractMesh, scheme::String; kwargs...)
+
+Solver for moving liquid diffusion with 2nd-order Runge-Kutta time integration for interface position.
+Uses RK2 (midpoint method) for higher-order accuracy:
+1. Compute k1 = flux at current position
+2. Predict half-step position: xf_half = xf_old - 0.5 * k1/ρL
+3. Rebuild geometry and solve for temperature at half-step
+4. Compute k2 = flux at half-step position
+5. Update position: xf_new = xf_old - k2/ρL
+
+No Newton iterations or residual minimization.
+"""
+function solve_MovingLiquidDiffusionUnsteadyMono_RK2!(s::Solver, phase::Phase, xf, Δt::Float64, Tₛ::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh::AbstractMesh, scheme::String; 
+    method=IterativeSolvers.gmres, algorithm=nothing, kwargs...)
+    
+    if s.A === nothing
+        error("Solver is not initialized. Call a solver constructor first.")
+    end
+
+    println("Solving the problem (RK2 Method):")
+    println("- Moving problem")
+    println("- Non prescibed motion")
+    println("- Monophasic problem")
+    println("- Unsteady problem")
+    println("- Diffusion problem")
+    println("- RK2 time integration for interface position (2nd order)")
+
+    # Initial time
+    t = Tₛ
+    println("Time : $(t)")
+
+    # Parameters
+    ρL = ic.flux.value
+    
+    # Log interface positions for each time step
+    xf_log = Float64[]
+    
+    # Determine dimensions
+    dims = phase.operator.size
+    len_dims = length(dims)
+    cap_index = len_dims
+    
+    # Create the 1D or 2D indices
+    if len_dims == 2
+        # 1D case
+        nx, nt = dims
+        n = nx
+    elseif len_dims == 3
+        # 2D case
+        nx, ny, nt = dims
+        n = nx*ny
+    else
+        error("Only 1D and 2D problems are supported.")
+    end
+
+    # Initialize
+    current_xf = xf
+    Tᵢ = s.x
+    
+    # Helper function to compute interface velocity from flux
+    function compute_interface_velocity(phase_local, Tᵢ_local, cap_index, scheme)
+        Vn_1 = phase_local.capacity.A[cap_index][1:end÷2, 1:end÷2]
+        Vn   = phase_local.capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
+        
+        # Temporal weighting for flux calculation
+        if scheme == "CN"
+            psip = psip_cn
+        else
+            psip = psip_be
+        end
+        Ψn1 = Diagonal(psip.(diag(Vn), diag(Vn_1)))
+        
+        # Extract operators
+        W! = phase_local.operator.Wꜝ[1:end÷2, 1:end÷2]
+        G = phase_local.operator.G[1:end÷2, 1:end÷2]
+        H = phase_local.operator.H[1:end÷2, 1:end÷2]
+        Id = build_I_D(phase_local.operator, phase_local.Diffusion_coeff, phase_local.capacity)
+        Id = Id[1:end÷2, 1:end÷2]
+        
+        # Temperature components
+        Tₒ, Tᵧ = Tᵢ_local[1:end÷2], Tᵢ_local[end÷2+1:end]
+        
+        # Compute flux at interface with temporal weighting
+        Interface_flux = Id * H' * W! * G * Ψn1 * Tₒ + Id * H' * W! * H * Ψn1 * Tᵧ
+        Interface_flux = sum(Interface_flux)
+        
+        # Convert flux to velocity: v = q/(ρL)
+        # Note: flux is already time-integrated, so no Δt multiplication needed
+        velocity = Interface_flux / ρL
+        
+        return velocity
+    end
+    
+    # Time loop
+    k = 1
+    while t < Tₑ
+        tn = t
+        tn1 = t + Δt
+        
+        # ===== Stage 1: Compute k1 at current position =====
+        # 1a) Solve the temperature field with current interface position
+        solve_system!(s; method=method, algorithm=algorithm, kwargs...)
+        Tᵢ = s.x
+        
+        # 1b) Compute interface velocity k1
+        k1 = compute_interface_velocity(phase, Tᵢ, cap_index, scheme)
+        
+        println("Time step $k | Stage 1: xf = $current_xf | k1 = $k1")
+        
+        # ===== Stage 2: Predict half-step and compute k2 =====
+        # 2a) Predict interface position at half-step
+        xf_half = current_xf - 0.5 * k1
+        
+        println("Time step $k | Stage 2: xf_half = $xf_half")
+        
+        # 2b) Rebuild geometry for half-step (linear interpolation in time)
+        t_half = tn + 0.5 * Δt
+        body_half = (xx, tt, _=0) -> (xx - (current_xf * (tn1 - tt)/Δt + xf_half * (tt - tn)/Δt))
+        STmesh_half = SpaceTimeMesh(mesh, [tn, tn1], tag=mesh.tag)
+        capacity_half = Capacity(body_half, STmesh_half)
+        operator_half = DiffusionOps(capacity_half)
+        phase_half = Phase(capacity_half, operator_half, phase.source, phase.Diffusion_coeff)
+        
+        # 2c) Rebuild system matrices for half-step
+        s.A = A_mono_unstead_diff_moving(phase_half.operator, phase_half.capacity, phase_half.Diffusion_coeff, bc, scheme)
+        s.b = b_mono_unstead_diff_moving(phase_half.operator, phase_half.capacity, phase_half.Diffusion_coeff, phase_half.source, bc, Tᵢ, Δt, tn, scheme)
+        BC_border_mono!(s.A, s.b, bc_b, mesh; t=tn1)
+        
+        # 2d) Solve for temperature at half-step
+        solve_system!(s; method=method, algorithm=algorithm, kwargs...)
+        Tᵢ_half = s.x
+        
+        # 2e) Compute interface velocity k2 at half-step
+        k2 = compute_interface_velocity(phase_half, Tᵢ_half, cap_index, scheme)
+        
+        println("Time step $k | Stage 2: k2 = $k2")
+        
+        # ===== Stage 3: Full step using k2 =====
+        # 3a) Update interface position using k2 (RK2 formula)
+        new_xf = current_xf - k2
+        
+        println("Time step $k | Final: xf_old = $current_xf | xf_new = $new_xf | Δxf = $(new_xf - current_xf)")
+        
+        # 3b) Log new interface position
+        push!(xf_log, new_xf)
+        
+        # 3c) Advance time
+        t += Δt
+        println("Time : $(t)")
+        
+        # 3d) Rebuild geometry for next time step with final position
+        body_final = (xx, tt, _=0) -> (xx - (current_xf * (tn1 - tt)/Δt + new_xf * (tt - tn)/Δt))
+        STmesh_final = SpaceTimeMesh(mesh, [tn, tn1], tag=mesh.tag)
+        capacity_final = Capacity(body_final, STmesh_final)
+        operator_final = DiffusionOps(capacity_final)
+        phase = Phase(capacity_final, operator_final, phase.source, phase.Diffusion_coeff)
+        
+        # 3e) Rebuild system matrices for next iteration
+        s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc, scheme)
+        s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ_half, Δt, tn, scheme)
+        BC_border_mono!(s.A, s.b, bc_b, mesh; t=tn1)
+        
+        # 3f) Store state and update interface
+        push!(s.states, s.x)
+        current_xf = new_xf
+        k += 1
+        
+        println("Max value : $(maximum(abs.(s.x)))")
+    end
+    
+    return s, xf_log
+end
+
+
 # Moving - Diffusion - Unsteady - Diphasic
 function A_diph_unstead_diff_moving_stef(operator1::DiffusionOps, operator2::DiffusionOps, capacite1::Capacity, capacite2::Capacity, D1, D2, ic::InterfaceConditions, scheme::String)
     # Determine dimensionality from operator1
