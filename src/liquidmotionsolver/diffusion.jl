@@ -243,7 +243,16 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
         Hₙ   = sum(Hₙ_profile)
         Hₙ₊₁ = sum(Hₙ₊₁_profile)
 
-        # Compute flux
+        # Compute flux with temporal weighting
+        Vn_1 = phase.capacity.A[cap_index][1:end÷2, 1:end÷2]
+        Vn   = phase.capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
+        if scheme == "CN"
+            psip = psip_cn
+        else
+            psip = psip_be
+        end
+        Ψn1 = Diagonal(psip.(diag(Vn), diag(Vn_1)))
+        
         W! = phase.operator.Wꜝ[1:end÷2, 1:end÷2]
         G = phase.operator.G[1:end÷2, 1:end÷2]
         H = phase.operator.H[1:end÷2, 1:end÷2]
@@ -251,7 +260,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
         Id   = build_I_D(phase.operator, phase.Diffusion_coeff, phase.capacity)
         Id  = Id[1:end÷2, 1:end÷2]
         Tₒ, Tᵧ = Tᵢ[1:end÷2], Tᵢ[end÷2+1:end]
-        Interface_term = Id * H' * W! * G * Tₒ + Id * H' * W! * H * Tᵧ
+        Interface_term = Id * H' * W! * G * Ψn1 * Tₒ + Id * H' * W! * H * Ψn1 * Tᵧ
         Interface_term = 1/(ρL) * sum(Interface_term)
 
         # New interface position: enforce H_{n+1} - H_n = q/(ρL)
@@ -366,7 +375,16 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
             Hₙ   = sum(Hₙ_profile)
             Hₙ₊₁ = sum(Hₙ₊₁_profile)
             
-            # Compute flux
+            # Compute flux with temporal weighting
+            Vn_1 = phase.capacity.A[cap_index][1:end÷2, 1:end÷2]
+            Vn   = phase.capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
+            if scheme == "CN"
+                psip = psip_cn
+            else
+                psip = psip_be
+            end
+            Ψn1 = Diagonal(psip.(diag(Vn), diag(Vn_1)))
+            
             W! = phase.operator.Wꜝ[1:end÷2, 1:end÷2]
             G = phase.operator.G[1:end÷2, 1:end÷2]
             H = phase.operator.H[1:end÷2, 1:end÷2]
@@ -374,7 +392,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
             Id   = build_I_D(phase.operator, phase.Diffusion_coeff, phase.capacity)
             Id  = Id[1:end÷2, 1:end÷2]
             Tₒ, Tᵧ = Tᵢ[1:end÷2], Tᵢ[end÷2+1:end]
-            Interface_term = Id * H' * W! * G * Tₒ + Id * H' * W! * H * Tᵧ
+            Interface_term = Id * H' * W! * G * Ψn1 * Tₒ + Id * H' * W! * H * Ψn1 * Tᵧ
             Interface_term = 1/(ρL) * sum(Interface_term)
 
             # New interface position
