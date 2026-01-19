@@ -1,6 +1,6 @@
 # Full Moving 2D - Diffusion - Unsteady - Monophasic
 
-function solve_MovingLiquidDiffusionUnsteadyMono2D!(s::Solver, phase::Phase, Interface_position, Hₙ⁰, sₙ, Δt::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh, scheme::String; interpo="linear", Newton_params=(1000, 1e-10, 1e-10, 1.0), cfl_target=0.5,
+function solve_MovingLiquidDiffusionUnsteadyMono2D!(s::Solver, phase::Phase, Interface_position, Hₙ⁰, sₙ, Δt::Float64, Tstart::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh, scheme::String; interpo="linear", Newton_params=(1000, 1e-10, 1e-10, 1.0), cfl_target=0.5,
     Δt_min=1e-4,
     Δt_max=1.0,
     adaptive_timestep=true, method=IterativeSolvers.gmres, 
@@ -17,7 +17,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono2D!(s::Solver, phase::Phase, Int
     println("- Diffusion problem")
 
     # Solve system for the initial condition
-    t=0.0
+    t=Tstart
     println("Time : $(t)")
 
     # Params
@@ -28,7 +28,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono2D!(s::Solver, phase::Phase, Int
     α        = Newton_params[4]
 
     # Log residuals and interface positions for each time step:
-    nt = Int(round(Tₑ/Δt))
+    nt = Int(round((Tₑ - Tstart)/Δt))
     residuals = Dict{Int, Vector{Float64}}()
     xf_log = []
     reconstruct = []
@@ -120,7 +120,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono2D!(s::Solver, phase::Phase, Int
         push!(residuals[1], err)
 
         # 5) Update geometry if not converged
-        if (err <= tol) || (err_rel <= reltol)
+        if (err <= tol) || (err_rel <= reltol) || (iter == max_iter)
             push!(xf_log, new_xf)
             break
         end
@@ -173,7 +173,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono2D!(s::Solver, phase::Phase, Int
             return xx - x_interp
         end
         STmesh = SpaceTimeMesh(mesh, [tₙ, tₙ₊₁], tag=mesh.tag)
-        capacity = Capacity(body, STmesh; compute_centroids=false)
+        capacity = Capacity(body, STmesh; compute_centroids=false, method="VOFI", integration_method=:vofijul)
         operator = DiffusionOps(capacity)
         phase = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
 
@@ -277,7 +277,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono2D!(s::Solver, phase::Phase, Int
             # Return signed distance
             return xx - x_interp
         end
-        capacity = Capacity(body, STmesh; compute_centroids=false)
+        capacity = Capacity(body, STmesh; compute_centroids=false, method="VOFI", integration_method=:vofijul)
         operator = DiffusionOps(capacity)
         phase = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
 
@@ -353,7 +353,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono2D!(s::Solver, phase::Phase, Int
             push!(residuals[k], err)
 
             # 5) Update geometry if not converged
-            if (err <= tol) || (err_rel <= reltol)
+            if (err <= tol) || (err_rel <= reltol) || (iter == max_iter)
                 push!(xf_log, new_xf)
                 break
             end
@@ -403,7 +403,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono2D!(s::Solver, phase::Phase, Int
             return xx - x_interp
             end
             STmesh = SpaceTimeMesh(mesh, [tₙ, tₙ₊₁], tag=mesh.tag)
-            capacity = Capacity(body, STmesh; compute_centroids=false)
+            capacity = Capacity(body, STmesh; compute_centroids=false, method="VOFI", integration_method=:vofijul)
             operator = DiffusionOps(capacity)
             phase = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
 

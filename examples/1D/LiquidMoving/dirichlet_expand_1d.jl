@@ -9,7 +9,7 @@ using CairoMakie
 # 1D Dirichlet expanding interface test case (Basilisk adaptation)
 const V = 1.0
 const T_EQ = 0.0
-const T0_SHIFT = 1.0e-6
+const T0_SHIFT = 1.0e-3
 
 function t_exact(x, v, t)
     if x < v * t
@@ -54,7 +54,7 @@ function run_case(nx; L=1.0, x0=-0.5, v=V, t0=T0_SHIFT, cfl=0.1, t_end=0.2, sche
     ρ = -1.0
     Lh = 1.0
     stefan_cond = InterfaceConditions(nothing, FluxJump(1.0, 0.0, ρ * Lh))
-    Newton_params = (200, 1e-10, 1e-10, 1.0)
+    Newton_params = (20, 1e-10, 1e-10, 1.0)
 
     solver = MovingLiquidDiffusionUnsteadyMono(phase, bc_b, bc_interface, dt, u0, mesh, scheme)
     solver, residuals, xf_log, timestep_history = solve_MovingLiquidDiffusionUnsteadyMono!(

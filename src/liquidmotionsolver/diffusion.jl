@@ -239,9 +239,9 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
         Tᵢ = s.x
 
         # 2) Update volumes / compute new interface
-    Hₙ_profile, Hₙ₊₁_profile = extract_height_profiles(phase.capacity, phase.operator.size)
-    Hₙ   = sum(Hₙ_profile)
-    Hₙ₊₁ = sum(Hₙ₊₁_profile)
+        Hₙ_profile, Hₙ₊₁_profile = extract_height_profiles(phase.capacity, phase.operator.size)
+        Hₙ   = sum(Hₙ_profile)
+        Hₙ₊₁ = sum(Hₙ₊₁_profile)
 
         # Compute flux
         W! = phase.operator.Wꜝ[1:end÷2, 1:end÷2]
@@ -254,7 +254,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
         Interface_term = Id * H' * W! * G * Tₒ + Id * H' * W! * H * Tᵧ
         Interface_term = 1/(ρL) * sum(Interface_term)
 
-        # New interface position
+        # New interface position: enforce H_{n+1} - H_n = q/(ρL)
         res = Hₙ₊₁ - Hₙ - Interface_term
         step = apply_learning_rate_step!(lr_state, current_xf, res)
         new_xf = current_xf + step
@@ -294,14 +294,15 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
     end
 
     if (err <= tol) || (err <= reltol * abs(current_xf))
-        println("Converged after $iter iterations with xf = $new_xf, error = $err")
+    println("Converged after $iter iterations with xf = $new_xf, error = $err")
     else
         println("Reached max_iter = $max_iter with xf = $new_xf, error = $err")
     end
     
     Tᵢ = s.x
     push!(s.states, s.x)
-    println("Time : $(t[1])")
+    t += Δt                        # advance to the time level of the computed state
+    println("Time : $(t)")
     println("Max value : $(maximum(abs.(s.x)))")
 
     # Time loop
@@ -332,12 +333,8 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
             println("Adaptive timestep: Δt = $(round(Δt, digits=6)), CFL = $(round(cfl, digits=3))")
         end
 
-        # Update time
-        t += Δt
-        println("Time : $(round(t, digits=6))")
-        
-        # 1) Reconstruct
-        STmesh = SpaceTimeMesh(mesh, [Δt, 2Δt], tag=mesh.tag)
+        # 1) Reconstruct geometry for next step on the correct time slab
+        STmesh = SpaceTimeMesh(mesh, [t, t+Δt], tag=mesh.tag)
         #v_guess = (new_xf - xf)/Δt
         #body = (xx, tt, _=0) -> xx - ( new_xf - v_guess * (tt - t) )
         body = (xx,tt, _=0)->(xx - new_xf) 
@@ -384,7 +381,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
             res = Hₙ₊₁ - Hₙ - Interface_term
             step = apply_learning_rate_step!(lr_state, current_xf, res)
             new_xf = current_xf + step
-            err = abs(step)
+            err = abs(res)
             println("Iteration $iter | xf = $new_xf | error = $err | res = $res | α = $(lr_state.last_lr)")
             # Store residuals
             if !haskey(residuals, k)
@@ -431,7 +428,8 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
         end
 
         push!(s.states, s.x)
-        println("Time : $(t[1])")
+        t += Δt
+        println("Time : $(t)")
         println("Max value : $(maximum(abs.(s.x)))")
         k += 1
     end

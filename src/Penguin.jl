@@ -162,4 +162,9 @@ export NavierStokesScalarCoupler, step!, solve_NavierStokesScalarCoupling!, solv
 
 include("solver/streamfunction_vorticity.jl")
 export StreamVorticity, solve_StreamVorticity!, step_StreamVorticity!, run_StreamVorticity!, run_until_StreamVorticity!
+
+
+include("liquidmotionsolver/rayleigh_benard_melting.jl")
+export RayleighBenardMeltingSetup, solve_MovingRayleighBenardMelting2D!
+
 end

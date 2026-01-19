@@ -4,7 +4,7 @@ using LinearAlgebra
 using SparseArrays
 using SpecialFunctions, LsqFit
 using CairoMakie
-
+using Roots
 
 """
 Calculate the dimensionless parameter λ for the one-phase Stefan problem.
@@ -12,7 +12,7 @@ Calculate the dimensionless parameter λ for the one-phase Stefan problem.
 function find_lambda(Stefan_number)
     f = (λ) -> λ*exp(λ^2)*erf(λ) - Stefan_number/sqrt(π)
     # Use initial guess of 0.1 to avoid issues at λ=0
-    lambda = find_zero(f, 10.0)
+    lambda = find_zero(f, (1e-6, 10.0), Bisection())
     return lambda
 end
 
@@ -37,7 +37,7 @@ end
 ### 1D Test Case : One-phase Stefan Problem
 # Define the spatial mesh
 nx = 40
-lx = 1.
+lx = 5.
 x0 = 0.
 domain = ((x0, lx),)
 mesh = Penguin.Mesh((nx,), (lx,), (x0,))
@@ -49,7 +49,7 @@ body = (x,t, _=0)->(x - xf)
 # Define the Space-Time mesh
 Δt = 0.5*(lx/nx)^2  # Time step based on stability condition
 Tstart = 0.0
-Tend = 0.01
+Tend = 1.0
 STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
 
 # Define the capacity
@@ -79,7 +79,7 @@ u0ᵧ = zeros((nx+1))
 u0 = vcat(u0ₒ, u0ᵧ)
 
 # Newton parameters
-max_iter = 1000
+max_iter = 10
 tol = eps()
 reltol = eps()
 α = 1.0
@@ -311,7 +311,7 @@ function plot_residuals_publication(residuals::Dict{Int, Vector{Float64}};
 end
 
 # Call the function with default parameters
-plot_residuals_publication(residuals)
+#plot_residuals_publication(residuals)
 
 # Call the function with default parameters
 
@@ -334,31 +334,20 @@ T_analytical = (x) -> analytical_temperature(x, Tend, 1.0, 1.0, lambda)
 
 
 function plot_temperature_comparison(
-    solver,
-    mesh::Penguin.Mesh,
-    T₀::Float64,
-    k::Float64,
-    lambda::Float64,
+    T_analytical,
+    u_num,
     t_final::Float64,
     xf_final::Float64;
+    x0=0.0,
+    lx=1.0,
     save_path::String="temperature_comparison.png"
 )
-    # Extract mesh info
-    x_nodes = mesh.nodes[1]
-    nx = length(x_nodes) - 1
+    # Create fine grid for analytical solution
+    x_analytical = range(x0, lx, 2000)
+    u_analytical = analytical_temperature.(x_analytical, t_final, 1.0, 1.0, lambda)
     
-    # Get numerical solution (bulk field)
-    u_num = solver.x[1:(nx+1)]
-    
-    # Calculate analytical solution
-    u_analytical = zeros(nx+1)
-    for i in 1:nx+1
-        if x_nodes[i] < xf_final
-            u_analytical[i] = analytical_temperature(x_nodes[i], t_final, T₀, k, lambda)
-        else
-            u_analytical[i] = 0.0  # Outside liquid domain
-        end
-    end
+    # Get mesh nodes for numerical solution
+    x_num = range(x0, lx, length(u_num))
     
     # Create figure
     fig = Figure(resolution=(900, 600), fontsize=14)
@@ -371,24 +360,14 @@ function plot_temperature_comparison(
     )
     
     # Plot solutions
-    lines!(ax, x_nodes, u_analytical, color=:red, linewidth=3, 
+    lines!(ax, x_analytical, u_analytical, color=:red, linewidth=3, 
            label="Analytical Solution")
-    scatter!(ax, x_nodes, u_num, color=:blue, markersize=6, 
+    scatter!(ax, x_num, u_num, color=:blue, markersize=6, 
            label="Numerical Solution")
     
     # Mark interface position
     vlines!(ax, xf_final, color=:black, linewidth=2, linestyle=:dash,
             label="Interface Position")
-    
-    # Calculate error metrics
-    l2_error = sqrt(sum((u_analytical - u_num).^2)) / sqrt(sum(u_analytical.^2))
-    max_error = maximum(abs.(u_analytical - u_num))
-    
-    # Add error information
-    text!(ax, "L₂ Error: $(round(l2_error, digits=6))\nMax Error: $(round(max_error, digits=6))",
-         position = (0.6*maximum(x_nodes), 0.8*T₀),
-         fontsize = 14,
-         color = :black)
     
     # Add legend
     axislegend(ax, position=:rt, framevisible=true, backgroundcolor=(:white, 0.7))
@@ -404,13 +383,12 @@ end
 
 # Plot comparison
 plot_temperature_comparison(
-    solver,
-    mesh,
-    1.0,   # T₀
-    1.0,   # k
-    lambda,
-    Tend,  # final time
-    xf_log[end]  # final interface position
+    T_analytical,
+    solver.x[1:(nx+1)],
+    Tend,
+    xf_log[end],
+    x0=x0,
+    lx=lx
 )
 readline()
 # Animation
