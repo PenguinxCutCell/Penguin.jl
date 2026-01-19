@@ -92,7 +92,7 @@ solver = MovingLiquidDiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, u0, mesh, "BE"
 println("Solving the Stefan problem with simplified direct method (with damped inner iterations)...")
 solver, xf_log = solve_MovingLiquidDiffusionUnsteadyMono_Simple!(
     solver, Fluide, xf, Δt, Tstart, Tend, bc_b, bc, stef_cond, mesh, "BE"; 
-    method=Base.:\, max_inner_iter=5, tol=1e-8, damping=0.5
+    method=Base.:\, max_inner_iter=2, tol=1e-8, damping=1.0
 )
 println("Simulation complete!")
 

@@ -524,6 +524,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
         iter = 0
         err = Inf
         trial_xf = current_xf
+        new_xf = current_xf
         
         while (iter < max_inner_iter) && (err > tol)
             iter += 1
