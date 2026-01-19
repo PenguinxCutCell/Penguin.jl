@@ -202,8 +202,9 @@ end
 println("Plotting temperature comparison...")
 Δt_eff = (Tend - Tstart) / length(xf_log)  # effective step from actually performed steps
 times = Tstart .+ collect(1:length(xf_log)) .* Δt_eff  # xf_log stores positions at the end of each step
-x_offset_0 = (xf_log[1] - x_offset) - analytical_position(times[1], 1.0, lambda)  # constant mesh/staggering offset
-xf_log_phys = xf_log .- x_offset .- x_offset_0
+# Convert from mesh coordinates to physical coordinates
+# Remove ONLY the constant mesh offset (Δx/2), not any numerical error offset
+xf_log_phys = xf_log .- x_offset
 x_num_phys = mesh.nodes[1] .- x_offset
 plot_temperature_comparison(
     T_analytical,
