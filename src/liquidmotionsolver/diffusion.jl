@@ -755,6 +755,18 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
         Vn   = phase1.capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
         Hₙ   = sum(diag(Vn))
         Hₙ₊₁ = sum(diag(Vn_1))
+        
+        # Compute temporal weighting
+        if scheme == "CN"
+            psip = psip_cn
+        else
+            psip = psip_be
+        end
+        Ψn1_1 = Diagonal(psip.(diag(Vn), diag(Vn_1)))
+        
+        Vn_1_2 = phase2.capacity.A[cap_index][1:end÷2, 1:end÷2]
+        Vn_2   = phase2.capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
+        Ψn1_2 = Diagonal(psip.(diag(Vn_2), diag(Vn_1_2)))
 
         # Compute flux for phase 1
         W!1 = phase1.operator.Wꜝ[1:end÷2, 1:end÷2]
@@ -764,7 +776,7 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
         Id1   = build_I_D(phase1.operator, phase1.Diffusion_coeff, phase1.capacity)
         Id1  = Id1[1:end÷2, 1:end÷2]
         Tₒ1, Tᵧ1 = Tᵢ[1:end÷4], Tᵢ[end÷4 + 1 : end÷2]
-        Interface_term_1 = Id1 * H1' * W!1 * G1 * Tₒ1 + Id1 * H1' * W!1 * H1 * Tᵧ1
+        Interface_term_1 = Id1 * H1' * W!1 * G1 * Ψn1_1 * Tₒ1 + Id1 * H1' * W!1 * H1 * Ψn1_1 * Tᵧ1
         Interface_term_1 = 1/(ρL) * sum(Interface_term_1)
 
         # Compute flux for phase 2
@@ -775,7 +787,7 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
         Id2   = build_I_D(phase2.operator, phase2.Diffusion_coeff, phase2.capacity)
         Id2  = Id2[1:end÷2, 1:end÷2]
         Tₒ2, Tᵧ2 = Tᵢ[end÷2 + 1 : 3end÷4], Tᵢ[3end÷4 + 1 : end]
-        Interface_term_2 = Id2 * H2' * W!2 * G2 * Tₒ2 + Id2 * H2' * W!2 * H2 * Tᵧ2
+        Interface_term_2 = Id2 * H2' * W!2 * G2 * Ψn1_2 * Tₒ2 + Id2 * H2' * W!2 * H2 * Ψn1_2 * Tᵧ2
         Interface_term_2 = 1/(ρL) * sum(Interface_term_2)
 
         # Compute Interface term
@@ -878,6 +890,18 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
             Hₙ   = sum(diag(Vn))
             Hₙ₊₁ = sum(diag(Vn_1))
             
+            # Compute temporal weighting
+            if scheme == "CN"
+                psip = psip_cn
+            else
+                psip = psip_be
+            end
+            Ψn1_1 = Diagonal(psip.(diag(Vn), diag(Vn_1)))
+            
+            Vn_1_2 = phase2.capacity.A[cap_index][1:end÷2, 1:end÷2]
+            Vn_2   = phase2.capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
+            Ψn1_2 = Diagonal(psip.(diag(Vn_2), diag(Vn_1_2)))
+            
             # Compute flux for phase 1
             W!1 = phase1.operator.Wꜝ[1:end÷2, 1:end÷2]
             G1 = phase1.operator.G[1:end÷2, 1:end÷2]
@@ -886,7 +910,7 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
             Id1= build_I_D(phase1.operator, phase1.Diffusion_coeff, phase1.capacity)
             Id1  = Id1[1:end÷2, 1:end÷2]
             Tₒ1, Tᵧ1 = Tᵢ[1:end÷4], Tᵢ[end÷4 + 1 : end÷2]
-            Interface_term_1 = Id1 * H1' * W!1 * G1 * Tₒ1 + Id1 * H1' * W!1 * H1 * Tᵧ1
+            Interface_term_1 = Id1 * H1' * W!1 * G1 * Ψn1_1 * Tₒ1 + Id1 * H1' * W!1 * H1 * Ψn1_1 * Tᵧ1
             Interface_term_1 = 1/(ρL) * sum(Interface_term_1)
     
             # Compute flux for phase 2
@@ -897,7 +921,7 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
             Id2   = build_I_D(phase2.operator, phase2.Diffusion_coeff, phase2.capacity)
             Id2  = Id2[1:end÷2, 1:end÷2]
             Tₒ2, Tᵧ2 = Tᵢ[end÷2 + 1 : 3end÷4], Tᵢ[3end÷4 + 1 : end]
-            Interface_term_2 = Id2 * H2' * W!2 * G2 * Tₒ2 + Id2 * H2' * W!2 * H2 * Tᵧ2
+            Interface_term_2 = Id2 * H2' * W!2 * G2 * Ψn1_2 * Tₒ2 + Id2 * H2' * W!2 * H2 * Ψn1_2 * Tᵧ2
             Interface_term_2 = 1/(ρL) * sum(Interface_term_2)
     
             # Compute Interface term
