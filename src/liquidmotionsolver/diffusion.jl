@@ -462,13 +462,13 @@ end
 Simplified solver for moving liquid diffusion problem with inner iterations.
 This solver uses a direct approach with Stefan condition-based corrections:
 1. First iteration: Solve temperature, compute flux, update position: xf_new = xf_old - velocity
-2. Additional iterations: Corrections based on Stefan condition residual
+2. Additional iterations: Damped corrections based on Stefan condition residual
 3. Advance to next time step
 
 The Stefan residual is: H_{n+1} - H_n - flux/(ρL), where H represents volume/height.
 """
 function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase, xf, Δt::Float64, Tₛ::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh::AbstractMesh, scheme::String; 
-    method=IterativeSolvers.gmres, algorithm=nothing, max_inner_iter=5, tol=1e-8, kwargs...)
+    method=IterativeSolvers.gmres, algorithm=nothing, max_inner_iter=5, tol=1e-8, damping=0.5, kwargs...)
     
     if s.A === nothing
         error("Solver is not initialized. Call a solver constructor first.")
@@ -481,7 +481,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
     println("- Unsteady problem")
     println("- Diffusion problem")
     println("- Direct flux-to-velocity update with Stefan residual corrections")
-    println("- Max inner iterations: $max_inner_iter, Tolerance: $tol")
+    println("- Max inner iterations: $max_inner_iter, Tolerance: $tol, Damping: $damping")
 
     # Initial time
     t = Tₛ
@@ -576,9 +576,10 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
                 new_xf = current_xf - velocity
                 println("  Iter $iter: xf = $trial_xf | velocity = $velocity | new_xf = $new_xf | residual = $stefan_residual | err = $err")
             else
-                # Subsequent iterations: correction based on residual
-                # Apply a damped correction proportional to the residual
-                correction = -stefan_residual
+                # Subsequent iterations: damped correction based on residual
+                # The residual tells us by how much the Stefan condition is violated
+                # Apply damped correction to stabilize convergence
+                correction = -damping * stefan_residual
                 new_xf = trial_xf + correction
                 println("  Iter $iter: xf = $trial_xf | correction = $correction | new_xf = $new_xf | residual = $stefan_residual | err = $err")
             end
