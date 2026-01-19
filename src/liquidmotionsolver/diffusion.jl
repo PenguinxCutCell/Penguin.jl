@@ -553,7 +553,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
         velocity = Interface_flux / ρL
         
         # 4) Update interface position: xf_new = xf_old + Δt * v
-        new_xf = current_xf + Δt * velocity
+        new_xf = current_xf - velocity
         
         println("Time step $k | xf_old = $current_xf | velocity = $velocity | xf_new = $new_xf")
         
