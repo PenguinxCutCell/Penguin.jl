@@ -87,6 +87,7 @@ include("liquidmotionsolver/height_tracking.jl")
 
 include("liquidmotionsolver/diffusion.jl")
 export MovingLiquidDiffusionUnsteadyMono, solve_MovingLiquidDiffusionUnsteadyMono!
+export solve_MovingLiquidDiffusionUnsteadyMono_Simple!
 export solve_MovingLiquidDiffusionUnsteadyMono_coupledNewton!
 export MovingLiquidDiffusionUnsteadyDiph, solve_MovingLiquidDiffusionUnsteadyDiph!
 

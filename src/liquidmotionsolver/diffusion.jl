@@ -456,6 +456,141 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
 end 
 
 
+"""
+    solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase, xf, Δt::Float64, Tₛ::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh::AbstractMesh, scheme::String; kwargs...)
+
+Simplified solver for moving liquid diffusion problem without Newton iterations.
+This solver uses a direct approach:
+1. Solve temperature field with current interface position
+2. Compute interface flux with proper temporal weighting
+3. Convert flux to velocity: v = q/(ρL)
+4. Update interface position: xf_new = xf_old + Δt * v
+5. Advance to next time step
+
+No correction iterations or residual minimization.
+"""
+function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase, xf, Δt::Float64, Tₛ::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh::AbstractMesh, scheme::String; 
+    method=IterativeSolvers.gmres, algorithm=nothing, kwargs...)
+    
+    if s.A === nothing
+        error("Solver is not initialized. Call a solver constructor first.")
+    end
+
+    println("Solving the problem (Simplified Direct Method):")
+    println("- Moving problem")
+    println("- Non prescibed motion")
+    println("- Monophasic problem")
+    println("- Unsteady problem")
+    println("- Diffusion problem")
+    println("- Direct flux-to-velocity update (no Newton iterations)")
+
+    # Initial time
+    t = Tₛ
+    println("Time : $(t)")
+
+    # Parameters
+    ρL = ic.flux.value
+    
+    # Log interface positions for each time step
+    xf_log = Float64[]
+    
+    # Determine dimensions
+    dims = phase.operator.size
+    len_dims = length(dims)
+    cap_index = len_dims
+    
+    # Create the 1D or 2D indices
+    if len_dims == 2
+        # 1D case
+        nx, nt = dims
+        n = nx
+    elseif len_dims == 3
+        # 2D case
+        nx, ny, nt = dims
+        n = nx*ny
+    else
+        error("Only 1D and 2D problems are supported.")
+    end
+
+    # Initialize
+    current_xf = xf
+    Tᵢ = s.x
+    
+    # Time loop
+    k = 1
+    while t < Tₑ
+        # 1) Solve the temperature field with current interface position
+        solve_system!(s; method=method, algorithm=algorithm, kwargs...)
+        Tᵢ = s.x
+        
+        # 2) Compute interface flux with temporal weighting
+        Vn_1 = phase.capacity.A[cap_index][1:end÷2, 1:end÷2]
+        Vn   = phase.capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
+        
+        # Temporal weighting for flux calculation
+        if scheme == "CN"
+            psip = psip_cn
+        else
+            psip = psip_be
+        end
+        Ψn1 = Diagonal(psip.(diag(Vn), diag(Vn_1)))
+        
+        # Extract operators
+        W! = phase.operator.Wꜝ[1:end÷2, 1:end÷2]
+        G = phase.operator.G[1:end÷2, 1:end÷2]
+        H = phase.operator.H[1:end÷2, 1:end÷2]
+        Id = build_I_D(phase.operator, phase.Diffusion_coeff, phase.capacity)
+        Id = Id[1:end÷2, 1:end÷2]
+        
+        # Temperature components
+        Tₒ, Tᵧ = Tᵢ[1:end÷2], Tᵢ[end÷2+1:end]
+        
+        # Compute flux at interface with temporal weighting
+        Interface_flux = Id * H' * W! * G * Ψn1 * Tₒ + Id * H' * W! * H * Ψn1 * Tᵧ
+        Interface_flux = sum(Interface_flux)
+        
+        # 3) Convert flux to velocity: v = q/(ρL)
+        velocity = Interface_flux / ρL
+        
+        # 4) Update interface position: xf_new = xf_old + Δt * v
+        new_xf = current_xf + Δt * velocity
+        
+        println("Time step $k | xf_old = $current_xf | velocity = $velocity | xf_new = $new_xf")
+        
+        # Log new interface position
+        push!(xf_log, new_xf)
+        
+        # 5) Advance time
+        t += Δt
+        println("Time : $(t)")
+        
+        # 6) Rebuild geometry for next time step
+        tn1 = t
+        tn  = t - Δt
+        
+        # Linear interpolation of interface position in time
+        body = (xx, tt, _=0) -> (xx - (current_xf * (tn1 - tt)/Δt + new_xf * (tt - tn)/Δt))
+        STmesh = SpaceTimeMesh(mesh, [tn, tn1], tag=mesh.tag)
+        capacity = Capacity(body, STmesh)
+        operator = DiffusionOps(capacity)
+        phase = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
+        
+        # Rebuild system matrices
+        s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc, scheme)
+        s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, Δt, tn, scheme)
+        BC_border_mono!(s.A, s.b, bc_b, mesh; t=tn1)
+        
+        # Store state and update interface
+        push!(s.states, s.x)
+        current_xf = new_xf
+        k += 1
+        
+        println("Max value : $(maximum(abs.(s.x)))")
+    end
+    
+    return s, xf_log
+end
+
 
 # Moving - Diffusion - Unsteady - Diphasic
 function A_diph_unstead_diff_moving_stef(operator1::DiffusionOps, operator2::DiffusionOps, capacite1::Capacity, capacite2::Capacity, D1, D2, ic::InterfaceConditions, scheme::String)
