@@ -19,8 +19,9 @@ body_c = (x,t, _=0)->-(x - xf)
 
 # Define the Space-Time mesh
 Δt = 0.001
+Tstart = 0.03
 Tend = 0.1
-STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
+STmesh = Penguin.SpaceTimeMesh(mesh, [Tstart, Tstart+Δt], tag=mesh.tag)
 
 # Define the capacity
 capacity = Capacity(body, STmesh)
@@ -33,14 +34,14 @@ operator_c = DiffusionOps(capacity_c)
 # Define the boundary conditions
 bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:top => Dirichlet(0.0), :bottom => Dirichlet(1.0)))
 ρ, L = 1.0, 1.0
-ic = InterfaceConditions(ScalarJump(1.0, 1.0, 0.5), FluxJump(1.0, 1.0, ρ*L))
+ic = InterfaceConditions(ScalarJump(1.0, 1.0, 0.0), FluxJump(1.0, 1.0, ρ*L))
 
 # Define the source term
 f1 = (x,y,z,t)->0.0
 f2 = (x,y,z,t)->0.0
 
 K1= (x,y,z)->1.0
-K2= (x,y,z)->0.05
+K2= (x,y,z)->1.0
 
 # Define the phase
 Fluide1 = Phase(capacity, operator, f1, K1)
@@ -55,7 +56,7 @@ u0ᵧ2 = ones(nx+1)*0.5
 u0 = vcat(u0ₒ1, u0ᵧ1, u0ₒ2, u0ᵧ2)
 
 # Newton parameters
-max_iter = 1000
+max_iter = 2
 tol = 1e-6
 reltol = 1e-6
 α = 1.0
@@ -65,7 +66,7 @@ Newton_params = (max_iter, tol, reltol, α)
 solver = MovingLiquidDiffusionUnsteadyDiph(Fluide1, Fluide2, bc_b, ic, Δt, u0, mesh, "BE")
 
 # Solve the problem
-solver, residuals, xf_log = solve_MovingLiquidDiffusionUnsteadyDiph!(solver, Fluide1, Fluide2, xf, Δt, Tend, bc_b, ic, mesh, "BE"; Newton_params=Newton_params, method=Base.:\)
+solver, residuals, xf_log = solve_MovingLiquidDiffusionUnsteadyDiph!(solver, Fluide1, Fluide2, xf, Δt, Tstart, Tend, bc_b, ic, mesh, "BE"; Newton_params=Newton_params, method=Base.:\)
 
 # Animation
 #animate_solution(solver, mesh, body)
@@ -83,7 +84,7 @@ end
 display(figure)
 
 # Plot the position
-time_series = 0:Δt:Tend
+time_series = Tstart:Δt:Tend
 figure = Figure()
 ax = Axis(figure[1,1], xlabel = "Time", ylabel = "Interface position", title = "Interface position")
 lines!(ax, time_series, xf_log, label = "Interface position")

@@ -459,34 +459,29 @@ end
 """
     solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase, xf, Δt::Float64, Tₛ::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh::AbstractMesh, scheme::String; kwargs...)
 
-Simplified solver for moving liquid diffusion problem with Levenberg-Marquardt iterations.
-This solver uses a Levenberg-Marquardt approach to solve the Stefan condition:
+Simplified solver for moving liquid diffusion problem with inner iterations.
+This solver uses a direct approach with Stefan condition-based corrections:
+1. First iteration: Solve temperature, compute flux, update position: xf_new = xf_old - velocity
+2. Additional iterations: Damped corrections based on Stefan condition residual
+3. Advance to next time step
 
-**Stefan condition:** V^{n+1}(xf) - V^n = flux(xf)/(ρL)
-
-**Levenberg-Marquardt method:**
-- Residual: r(xf) = V^{n+1}(xf) - V^n - flux(xf)/(ρL)
-- Computes Jacobian dr/dxf using finite differences
-- Adaptive damping: increases λ if residual grows, decreases if it shrinks
-- Update: xf^{k+1} = xf^k + δ where δ solves (J^T J + λI) δ = -J^T r
-
-The algorithm checks if each step reduces the residual and adapts accordingly.
+The Stefan residual is: H_{n+1} - H_n - flux/(ρL), where H represents volume/height.
 """
 function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase, xf, Δt::Float64, Tₛ::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh::AbstractMesh, scheme::String; 
-    method=IterativeSolvers.gmres, algorithm=nothing, max_inner_iter=10, tol=1e-8, lambda_init=1e-3, kwargs...)
+    method=IterativeSolvers.gmres, algorithm=nothing, max_inner_iter=5, tol=1e-8, damping=0.5, kwargs...)
     
     if s.A === nothing
         error("Solver is not initialized. Call a solver constructor first.")
     end
 
-    println("Solving the problem (Levenberg-Marquardt Method):")
+    println("Solving the problem (Simplified Direct Method with Inner Iterations):")
     println("- Moving problem")
     println("- Non prescibed motion")
     println("- Monophasic problem")
     println("- Unsteady problem")
     println("- Diffusion problem")
-    println("- Levenberg-Marquardt optimization for Stefan condition")
-    println("- Max inner iterations: $max_inner_iter, Tolerance: $tol")
+    println("- Direct flux-to-velocity update with Stefan residual corrections")
+    println("- Max inner iterations: $max_inner_iter, Tolerance: $tol, Damping: $damping")
 
     # Initial time
     t = Tₛ
@@ -497,6 +492,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
     
     # Log interface positions for each time step
     xf_log = Float64[]
+    stefan_residuals = Dict{Int, Vector{Float64}}()
     
     # Determine dimensions
     dims = phase.operator.size
@@ -520,118 +516,78 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
     current_xf = xf
     Tᵢ = s.x
     
-    # Helper function to compute Stefan residual at a given interface position
-    function compute_stefan_residual(trial_xf_local, current_xf_local, tn_local, tn1_local, Tᵢ_prev)
-        # Rebuild geometry
-        body_local = (xx, tt, _=0) -> (xx - (current_xf_local * (tn1_local - tt)/Δt + trial_xf_local * (tt - tn_local)/Δt))
-        STmesh_local = SpaceTimeMesh(mesh, [tn_local, tn1_local], tag=mesh.tag)
-        capacity_local = Capacity(body_local, STmesh_local)
-        operator_local = DiffusionOps(capacity_local)
-        phase_local = Phase(capacity_local, operator_local, phase.source, phase.Diffusion_coeff)
-        
-        # Rebuild system matrices
-        s.A = A_mono_unstead_diff_moving(phase_local.operator, phase_local.capacity, phase_local.Diffusion_coeff, bc, scheme)
-        s.b = b_mono_unstead_diff_moving(phase_local.operator, phase_local.capacity, phase_local.Diffusion_coeff, phase_local.source, bc, Tᵢ_prev, Δt, tn_local, scheme)
-        BC_border_mono!(s.A, s.b, bc_b, mesh; t=tn1_local)
-        
-        # Solve temperature
-        solve_system!(s; method=method, algorithm=algorithm, kwargs...)
-        Tᵢ_local = s.x
-        
-        # Compute flux
-        Vn_1_local = phase_local.capacity.A[cap_index][1:end÷2, 1:end÷2]
-        Vn_local   = phase_local.capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
-        
-        if scheme == "CN"
-            psip = psip_cn
-        else
-            psip = psip_be
-        end
-        Ψn1_local = Diagonal(psip.(diag(Vn_local), diag(Vn_1_local)))
-        
-        W!_local = phase_local.operator.Wꜝ[1:end÷2, 1:end÷2]
-        G_local = phase_local.operator.G[1:end÷2, 1:end÷2]
-        H_local = phase_local.operator.H[1:end÷2, 1:end÷2]
-        Id_local = build_I_D(phase_local.operator, phase_local.Diffusion_coeff, phase_local.capacity)
-        Id_local = Id_local[1:end÷2, 1:end÷2]
-        
-        Tₒ_local, Tᵧ_local = Tᵢ_local[1:end÷2], Tᵢ_local[end÷2+1:end]
-        
-        Interface_flux_local = Id_local * H_local' * W!_local * G_local * Ψn1_local * Tₒ_local + Id_local * H_local' * W!_local * H_local * Ψn1_local * Tᵧ_local
-        Interface_flux_local = sum(Interface_flux_local)
-        
-        velocity_local = Interface_flux_local / ρL
-        
-        # Stefan residual
-        Hₙ_local   = sum(diag(Vn_local))
-        Hₙ₊₁_local = sum(diag(Vn_1_local))
-        residual = Hₙ₊₁_local - Hₙ_local - velocity_local
-        
-        return residual, velocity_local, Tᵢ_local
-    end
-    
     # Time loop
     k = 1
     while t < Tₑ
         println("\n=== Time step $k ===")
         
-        # Levenberg-Marquardt parameters
-        lambda = lambda_init
-        lambda_factor = 10.0
-        
         # Inner iteration loop for Stefan condition
         iter = 0
+        err = Inf
         trial_xf = current_xf
-        
-        tn = t
-        tn1 = t + Δt
-        
-        # Compute initial residual
-        residual, velocity, Tᵢ = compute_stefan_residual(trial_xf, current_xf, tn, tn1, Tᵢ)
-        err = abs(residual)
-        err_prev = err
-        
-        println("  Iter $iter: xf = $trial_xf | velocity = $velocity | residual = $residual | err = $err | λ = $lambda")
+        new_xf = current_xf
         
         while (iter < max_inner_iter) && (err > tol)
             iter += 1
             
-            # Compute Jacobian using finite differences
-            epsilon = max(1e-6, 1e-6 * abs(trial_xf))
-            xf_plus = trial_xf + epsilon
-            residual_plus, _, _ = compute_stefan_residual(xf_plus, current_xf, tn, tn1, Tᵢ)
-            jacobian = (residual_plus - residual) / epsilon
+            # 1) Solve the temperature field with current trial interface position
+            solve_system!(s; method=method, algorithm=algorithm, kwargs...)
+            Tᵢ = s.x
             
-            # Levenberg-Marquardt update: (J^T J + λI) δ = -J^T r
-            # For scalar: δ = -J * r / (J^2 + λ)
-            if abs(jacobian) < 1e-12
-                println("  Warning: Jacobian too small, using gradient descent")
-                delta = -residual * 0.1
+            # 2) Compute interface flux with temporal weighting
+            Vn_1 = phase.capacity.A[cap_index][1:end÷2, 1:end÷2]
+            Vn   = phase.capacity.A[cap_index][end÷2+1:end, end÷2+1:end]
+            
+            # Temporal weighting for flux calculation
+            if scheme == "CN"
+                psip = psip_cn
             else
-                delta = -jacobian * residual / (jacobian^2 + lambda)
+                psip = psip_be
             end
+            Ψn1 = Diagonal(psip.(diag(Vn), diag(Vn_1)))
             
-            # Try the update
-            new_xf = trial_xf + delta
+            # Extract operators
+            W! = phase.operator.Wꜝ[1:end÷2, 1:end÷2]
+            G = phase.operator.G[1:end÷2, 1:end÷2]
+            H = phase.operator.H[1:end÷2, 1:end÷2]
+            Id = build_I_D(phase.operator, phase.Diffusion_coeff, phase.capacity)
+            Id = Id[1:end÷2, 1:end÷2]
             
-            # Compute new residual
-            residual_new, velocity_new, Tᵢ_new = compute_stefan_residual(new_xf, current_xf, tn, tn1, Tᵢ)
-            err_new = abs(residual_new)
+            # Temperature components
+            Tₒ, Tᵧ = Tᵢ[1:end÷2], Tᵢ[end÷2+1:end]
             
-            # Check if step improved the solution
-            if err_new < err
-                # Accept step and decrease damping (move toward Gauss-Newton)
-                trial_xf = new_xf
-                residual = residual_new
-                velocity = velocity_new
-                Tᵢ = Tᵢ_new
-                err = err_new
-                lambda = max(lambda / lambda_factor, 1e-10)
-                println("  Iter $iter: xf = $trial_xf | δ = $delta | residual = $residual | err = $err | λ = $lambda [ACCEPT]")
+            # Compute flux at interface with temporal weighting
+            Interface_flux = Id * H' * W! * G * Ψn1 * Tₒ + Id * H' * W! * H * Ψn1 * Tᵧ
+            Interface_flux = sum(Interface_flux)
+            
+            # 3) Convert flux to velocity: v = q/(ρL)
+            velocity = Interface_flux / ρL
+            
+            # 4) Compute Stefan residual
+            # Extract volume/height values
+            Hₙ   = sum(diag(Vn))
+            Hₙ₊₁ = sum(diag(Vn_1))
+            
+            # Stefan condition: H_{n+1} - H_n = flux/(ρL)
+            # Residual: should be zero when satisfied
+            stefan_residual = Hₙ₊₁ - Hₙ - velocity
+            err = abs(stefan_residual)
+            if !haskey(stefan_residuals, k)
+                stefan_residuals[k] = Float64[]
+            end
+            push!(stefan_residuals[k], err)
+            
+            if iter == 1
+                # First iteration: direct update
+                new_xf = current_xf - velocity
+                println("  Iter $iter: xf = $trial_xf | velocity = $velocity | new_xf = $new_xf | residual = $stefan_residual | err = $err")
             else
-                # Reject step and increase damping (move toward gradient descent)
-                lambda = min(lambda * lambda_factor, 1e10)
-                println("  Iter $iter: xf = $trial_xf | δ = $delta | err_new = $err_new > $err | λ = $lambda [REJECT]")
+                # Subsequent iterations: damped correction based on residual
+                # The residual tells us by how much the Stefan condition is violated
+                # Apply damped correction to stabilize convergence
+                correction = -damping * stefan_residual
+                new_xf = trial_xf + correction
+                println("  Iter $iter: xf = $trial_xf | correction = $correction | new_xf = $new_xf | residual = $stefan_residual | err = $err")
             end
             
             # Check convergence
@@ -639,14 +595,30 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
                 println("  Converged after $iter iterations with err = $err")
                 break
             end
+            
+            # Update trial position and rebuild geometry for next iteration
+            if iter < max_inner_iter
+                trial_xf = new_xf
+                tn1 = t + Δt
+                tn  = t
+                
+                # Linear interpolation of interface position in time
+                body = (xx, tt, _=0) -> (xx - (current_xf * (tn1 - tt)/Δt + trial_xf * (tt - tn)/Δt))
+                STmesh = SpaceTimeMesh(mesh, [tn, tn1], tag=mesh.tag)
+                capacity = Capacity(body, STmesh)
+                operator = DiffusionOps(capacity)
+                phase = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
+                
+                # Rebuild system matrices
+                s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc, scheme)
+                s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, Δt, tn, scheme)
+                BC_border_mono!(s.A, s.b, bc_b, mesh; t=tn1)
+            end
         end
         
         if err > tol
             println("  Reached max iterations ($max_inner_iter) with err = $err")
         end
-        
-        # Use the final position
-        new_xf = trial_xf
         
         # Log final interface position for this time step
         push!(xf_log, new_xf)
@@ -678,7 +650,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
         println("Max value : $(maximum(abs.(s.x)))")
     end
     
-    return s, xf_log
+    return s, xf_log, stefan_residuals
 end
 
 

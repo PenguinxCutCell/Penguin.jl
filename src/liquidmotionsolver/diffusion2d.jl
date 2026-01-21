@@ -649,7 +649,7 @@ end
 
 
 # Main solver function for the diphasic Stefan problem in 2D
-function solve_MovingLiquidDiffusionUnsteadyDiph2D!(s::Solver, phase1::Phase, phase2::Phase, Interface_position, Hₙ⁰,sₙ, Δt::Float64, Tₑ::Float64, bc_b::BorderConditions, ic::InterfaceConditions, mesh, scheme::String; interpo="quad", Newton_params=(1000, 1e-10, 1e-10, 1.0), method=IterativeSolvers.gmres, algorithm=nothing, kwargs...)
+function solve_MovingLiquidDiffusionUnsteadyDiph2D!(s::Solver, phase1::Phase, phase2::Phase, Interface_position, Hₙ⁰,sₙ, Δt::Float64, Tstart, Tₑ::Float64, bc_b::BorderConditions, ic::InterfaceConditions, mesh, scheme::String; interpo="quad", Newton_params=(1000, 1e-10, 1e-10, 1.0), method=IterativeSolvers.gmres, algorithm=nothing, kwargs...)
     if s.A === nothing
         error("Solver is not initialized. Call a solver constructor first.")
     end
@@ -662,7 +662,7 @@ function solve_MovingLiquidDiffusionUnsteadyDiph2D!(s::Solver, phase1::Phase, ph
     println("- Diffusion problem")
 
     # Solve system for the initial condition
-    t = 0.0
+    t = Tstart
     println("Time : $(t)")
 
     # Params
@@ -673,7 +673,7 @@ function solve_MovingLiquidDiffusionUnsteadyDiph2D!(s::Solver, phase1::Phase, ph
     α        = Newton_params[4]
 
     # Log residuals and interface positions for each time step:
-    nt = Int(Tₑ/Δt)
+    nt = Int(round((Tₑ - Tstart)/Δt))
     residuals = [[] for _ in 1:2nt]
     xf_log = []
     reconstruct = []
@@ -720,8 +720,8 @@ function solve_MovingLiquidDiffusionUnsteadyDiph2D!(s::Solver, phase1::Phase, ph
         solve_system!(s; method=method, algorithm=algorithm, kwargs...)
         Tᵢ = s.x
 
-    # 2) Recompute heights for phase 1
-    Hₙ_1, Hₙ₊₁_1 = extract_height_profiles(phase1.capacity, dims)
+        # 2) Recompute heights for phase 1
+        Hₙ_1, Hₙ₊₁_1 = extract_height_profiles(phase1.capacity, dims)
 
         # 3) Compute the interface flux term for phase 1
         W!1 = phase1.operator.Wꜝ[1:end÷2, 1:end÷2]
@@ -826,8 +826,8 @@ function solve_MovingLiquidDiffusionUnsteadyDiph2D!(s::Solver, phase1::Phase, ph
             return -(xx - x_interp)
         end        
         STmesh = SpaceTimeMesh(mesh, [tₙ, tₙ₊₁], tag=mesh.tag)
-        capacity1 = Capacity(body1, STmesh; compute_centroids=false)
-        capacity2 = Capacity(body2, STmesh; compute_centroids=false)
+        capacity1 = Capacity(body1, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
+        capacity2 = Capacity(body2, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
         operator1 = DiffusionOps(capacity1)
         operator2 = DiffusionOps(capacity2)
         phase1 = Phase(capacity1, operator1, phase1.source, phase1.Diffusion_coeff)
@@ -921,8 +921,8 @@ function solve_MovingLiquidDiffusionUnsteadyDiph2D!(s::Solver, phase1::Phase, ph
             # Return signed distance
             return -(xx - x_interp)
         end
-        capacity1 = Capacity(body1, STmesh; compute_centroids=false)
-        capacity2 = Capacity(body2, STmesh; compute_centroids=false)
+        capacity1 = Capacity(body1, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
+        capacity2 = Capacity(body2, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
         operator1 = DiffusionOps(capacity1)
         operator2 = DiffusionOps(capacity2)
         phase1 = Phase(capacity1, operator1, phase1.source, phase1.Diffusion_coeff)
@@ -1064,8 +1064,8 @@ function solve_MovingLiquidDiffusionUnsteadyDiph2D!(s::Solver, phase1::Phase, ph
                 return -(xx - x_interp)
             end      
             STmesh = SpaceTimeMesh(mesh, [tₙ, tₙ₊₁], tag=mesh.tag)
-            capacity1 = Capacity(body1, STmesh; compute_centroids=false)
-            capacity2 = Capacity(body2, STmesh; compute_centroids=false)
+            capacity1 = Capacity(body1, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
+            capacity2 = Capacity(body2, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
             operator1 = DiffusionOps(capacity1)
             operator2 = DiffusionOps(capacity2)
             phase1 = Phase(capacity1, operator1, phase1.source, phase1.Diffusion_coeff)

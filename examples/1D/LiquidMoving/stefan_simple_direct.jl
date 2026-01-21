@@ -88,11 +88,11 @@ u0 = vcat(u0ₒ, u0ᵧ)
 # Define the solver
 solver = MovingLiquidDiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, u0, mesh, "BE")
 
-# Solve the problem using the LEVENBERG-MARQUARDT METHOD
-println("Solving the Stefan problem with Levenberg-Marquardt method...")
+# Solve the problem using the SIMPLIFIED FIXED-POINT METHOD
+println("Solving the Stefan problem with simplified fixed-point method...")
 solver, xf_log = solve_MovingLiquidDiffusionUnsteadyMono_Simple!(
     solver, Fluide, xf, Δt, Tstart, Tend, bc_b, bc, stef_cond, mesh, "BE"; 
-    method=Base.:\, max_inner_iter=10, tol=1e-8, lambda_init=1e-3
+    method=Base.:\, max_inner_iter=1, tol=1e-8
 )
 println("Simulation complete!")
 

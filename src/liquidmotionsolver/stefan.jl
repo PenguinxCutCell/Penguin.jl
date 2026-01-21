@@ -1068,7 +1068,7 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
             
             # 8. Update space-time mesh and capacity
             STmesh = Penguin.SpaceTimeMesh(mesh, time_interval, tag=mesh.tag)
-            capacity = Capacity(body, STmesh; compute_centroids=false)
+            capacity = Capacity(body, STmesh;  method="VOFI", integration_method=:vofijul, compute_centroids=false)
             operator = DiffusionOps(capacity)
             phase_updated = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
             
@@ -1085,7 +1085,7 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
             phase = phase_updated
 
             body_2d = (x, y, _=0) -> body(x, y, tₙ₊₁)
-            capacity_2d = Capacity(body_2d, mesh; compute_centroids=false)
+            capacity_2d = Capacity(body_2d, mesh;  method="VOFI", integration_method=:vofijul, compute_centroids=false)
             operator_2d = DiffusionOps(capacity_2d)
             phase_2d = Phase(capacity_2d, operator_2d, phase.source, phase.Diffusion_coeff)
         end
@@ -1130,6 +1130,34 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
     end
     
     return s, residuals, xf_log, timestep_history, phase_2d, position_increments
+end
+
+"""
+Wrapper around `solve_StefanMono2D!` for unclosed interfaces (e.g. planar fronts).
+Ensures the provided `FrontTracker` is marked as open and accepts an `adaptive_timestep`
+keyword (currently unused) for compatibility with example scripts.
+"""
+function solve_StefanMono2Dunclosed!(s::Solver, phase::Phase, front::FrontTracker, Δt::Float64, Tₛ::Float64, Tₑ::Float64,
+                                     bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions,
+                                     mesh::Penguin.Mesh{2}, scheme::String;
+                                     adaptive_timestep::Bool=false,
+                                     kwargs...)
+    # Force the interface to be treated as unclosed and drop duplicated closing marker if present
+    markers = get_markers(front)
+    if front.is_closed || (length(markers) > 1 && markers[1] == markers[end])
+        markers = copy(markers)
+        if length(markers) > 1 && markers[1] == markers[end]
+            pop!(markers)
+        end
+        set_markers!(front, markers, false)
+        println("solve_StefanMono2Dunclosed!: converted provided front to an open interface with $(length(markers)) markers")
+    end
+
+    if adaptive_timestep
+        println("solve_StefanMono2Dunclosed!: adaptive_timestep is not implemented; proceeding with fixed Δt = $Δt")
+    end
+
+    return solve_StefanMono2D!(s, phase, front, Δt, Tₛ, Tₑ, bc_b, bc, ic, mesh, scheme; kwargs...)
 end
 
 function solve_StefanMono2D_geom!(s::Solver, phase::Phase, front::FrontTracker, Δt::Float64, Tₛ::Float64, Tₑ::Float64,

@@ -63,7 +63,7 @@ capacity = Capacity(body, STmesh)
 operator = DiffusionOps(capacity)
 
 # Define the boundary conditions
-bc = Dirichlet(0.0)
+bc = Dirichlet((x,t,_=0) -> 0.0)
 bc1 = Dirichlet(0.0)
 
 bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:top => Dirichlet(0.0), :bottom => Dirichlet(1.0)))
@@ -86,7 +86,7 @@ u0ᵧ = zeros((nx+1))
 u0 = vcat(u0ₒ, u0ᵧ)
 
 # Newton parameters
-max_iter = 1
+max_iter = 2
 tol = eps()
 reltol = eps()
 α = 1.0
@@ -220,7 +220,7 @@ plot_interface_position(
     xf_log_phys,
     times,
     lambda=lambda,
-    vertical_offset=0.0
+    vertical_offset= 0.0
 )
 
 # Final interface position (numerical and analytical at Tend)

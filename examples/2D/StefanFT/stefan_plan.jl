@@ -5,6 +5,7 @@ using SparseArrays
 using CairoMakie
 using Statistics
 using SpecialFunctions
+using FrontCutTracking
 
 ### Problème de Stefan avec interface plane
 ### Solidification avec une interface plane se déplaçant dans la direction x

@@ -6,6 +6,7 @@ using CairoMakie
 using Interpolations
 using Colors
 using Statistics
+using FrontCutTracking
 
 ### 2D Test Case: Growing Crystal with Perturbed Interface
 ### Crystal growing in an undercooled liquid
@@ -21,7 +22,7 @@ Ste = (c * (TM - T∞)) / L
 println("Stefan number: $Ste")
 
 # Define the spatial mesh
-nx, ny = 64, 64  # Number of grid points in x and y directions
+nx, ny = 128, 128 # Number of grid points in x and y directions
 lx, ly = 4.0, 4.0
 x0, y0 = -2.0, -2.0
 Δx, Δy = lx/nx, ly/ny
@@ -35,7 +36,7 @@ R0 = 1.0  # Base radius for the crystal
 
 # Create front tracker with perturbed crystal shape
 front = FrontTracker()
-nmarkers = 300  # Number of markers
+nmarkers = 100  # Number of markers
 
 # Create the perturbed crystal
 create_crystal!(front, 0.0, 0.0, R0, 6, 0.1, nmarkers)
@@ -44,8 +45,7 @@ create_crystal!(front, 0.0, 0.0, R0, 6, 0.1, nmarkers)
 body = (x, y, t, _=0) -> -sdf(front, x, y)
 
 # Define the Space-Time mesh
-Δt = 0.1 * (Δx)^2  # Time step size based on mesh spacing
-Δt = 0.005
+Δt = 0.5 * (Δx)^2  # Time step size based on mesh spacing
 t_final = t_init + 10*Δt  # Run for 10 time steps
 
 STmesh = Penguin.SpaceTimeMesh(mesh, [t_init, t_final], tag=mesh.tag)
@@ -98,7 +98,7 @@ for idx in 1:length(centroids)
         u0ₒ[idx] = TM + transition * (T∞ - TM)
     end
 end
-#u0ₒ = ones((nx+1)*(ny+1)) * T∞ 
+u0ₒ = ones((nx+1)*(ny+1)) * T∞ 
 u0ᵧ = ones((nx+1)*(ny+1)) * TM  # Interface temperature
 u0 = vcat(u0ₒ, u0ᵧ)
 
@@ -122,7 +122,7 @@ lines!(ax_init, marker_x, marker_y, color=:black, linewidth=2)
 display(fig_init)
 
 # Newton parameters
-Newton_params = (5, 1e-6, 1e-6, 1.0)  # max_iter, tol, reltol, α
+Newton_params = (2, 1e-6, 1e-6, 1.0)  # max_iter, tol, reltol, α
 
 # Run the simulation
 solver = StefanMono2D(Fluide, bc_b, bc, Δt, u0, mesh, "BE")
@@ -131,8 +131,8 @@ solver = StefanMono2D(Fluide, bc_b, bc, Δt, u0, mesh, "BE")
 solver, residuals, xf_log, timestep_history = solve_StefanMono2D!(
     solver, Fluide, front, Δt, t_init, t_final, bc_b, bc, stef_cond, mesh, "BE";
     Newton_params=Newton_params, 
-    smooth_factor=0.7, 
-    window_size=55, 
+    smooth_factor=1.0, 
+    window_size=1, 
     method=Base.:\
 )
 
