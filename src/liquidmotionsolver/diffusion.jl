@@ -459,29 +459,37 @@ end
 """
     solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase, xf, Δt::Float64, Tₛ::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh::AbstractMesh, scheme::String; kwargs...)
 
-Simplified solver for moving liquid diffusion problem with inner iterations.
-This solver uses a direct approach with Stefan condition-based corrections:
-1. First iteration: Solve temperature, compute flux, update position: xf_new = xf_old - velocity
-2. Additional iterations: Damped corrections based on Stefan condition residual
-3. Advance to next time step
+Simplified solver for moving liquid diffusion problem with fixed-point iterations.
+This solver uses a fixed-point iteration approach based on the Stefan condition:
 
-The Stefan residual is: H_{n+1} - H_n - flux/(ρL), where H represents volume/height.
+**Stefan condition:** V^{n+1} - V^n = flux/(ρL)
+
+**Fixed-point iteration:** xf^{k+1} = xf^n - flux(xf^k)/(ρL)
+
+At each iteration:
+1. Solve temperature field with current interface guess xf^k
+2. Compute interface flux with proper temporal weighting
+3. Update: xf^{k+1} = xf^n - flux/(ρL)
+4. Check Stefan residual for convergence
+5. Repeat until residual < tolerance or max iterations
+
+The iterations refine the interface position until the Stefan condition is satisfied.
 """
 function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase, xf, Δt::Float64, Tₛ::Float64, Tₑ::Float64, bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions, mesh::AbstractMesh, scheme::String; 
-    method=IterativeSolvers.gmres, algorithm=nothing, max_inner_iter=5, tol=1e-8, damping=0.5, kwargs...)
+    method=IterativeSolvers.gmres, algorithm=nothing, max_inner_iter=5, tol=1e-8, kwargs...)
     
     if s.A === nothing
         error("Solver is not initialized. Call a solver constructor first.")
     end
 
-    println("Solving the problem (Simplified Direct Method with Inner Iterations):")
+    println("Solving the problem (Simplified Fixed-Point Method):")
     println("- Moving problem")
     println("- Non prescibed motion")
     println("- Monophasic problem")
     println("- Unsteady problem")
     println("- Diffusion problem")
-    println("- Direct flux-to-velocity update with Stefan residual corrections")
-    println("- Max inner iterations: $max_inner_iter, Tolerance: $tol, Damping: $damping")
+    println("- Fixed-point iteration based on Stefan condition")
+    println("- Max inner iterations: $max_inner_iter, Tolerance: $tol")
 
     # Initial time
     t = Tₛ
@@ -563,31 +571,21 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
             # 3) Convert flux to velocity: v = q/(ρL)
             velocity = Interface_flux / ρL
             
-            # 4) Compute Stefan residual
+            # 4) Fixed-point iteration: xf^{k+1} = xf^n - velocity(xf^k)
+            # Each iteration computes flux at current guess and updates from start position
+            new_xf = current_xf - velocity
+            
+            # 5) Compute Stefan residual to check convergence
             # Extract volume/height values
             Hₙ   = sum(diag(Vn))
             Hₙ₊₁ = sum(diag(Vn_1))
             
-            # Stefan condition: H_{n+1} - H_n = flux/(ρL)
+            # Stefan condition: V^{n+1} - V^n = flux/(ρL)
             # Residual: should be zero when satisfied
             stefan_residual = Hₙ₊₁ - Hₙ - velocity
             err = abs(stefan_residual)
-            if !haskey(stefan_residuals, k)
-                stefan_residuals[k] = Float64[]
-            end
-            push!(stefan_residuals[k], err)
             
-            if iter == 1
-                # First iteration: direct update
-                new_xf = current_xf - velocity
-                println("  Iter $iter: xf = $trial_xf | velocity = $velocity | new_xf = $new_xf | residual = $stefan_residual | err = $err")
-            else
-                # Subsequent iterations: damped correction based on residual
-                # The residual tells us by how much the Stefan condition is violated
-                # Apply damped correction to stabilize convergence
-                correction = -damping * stefan_residual
-                new_xf = trial_xf + correction
-                println("  Iter $iter: xf = $trial_xf | correction = $correction | new_xf = $new_xf | residual = $stefan_residual | err = $err")
+            println("  Iter $iter: xf = $trial_xf | velocity = $velocity | new_xf = $new_xf | residual = $stefan_residual | err = $err")
             end
             
             # Check convergence
