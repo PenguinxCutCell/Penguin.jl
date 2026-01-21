@@ -34,7 +34,7 @@ end
 
 ### 1D Test Case : One-phase Stefan Problem (Simplified Direct Method)
 # Define the spatial mesh
-nx = 32
+nx = 64
 lx = 1.
 x0 = 0.
 domain = ((x0, lx),)
@@ -44,8 +44,8 @@ x_offset = mesh.nodes[1][1] - x0
 
 # Define the Space-Time mesh
 Δt = 0.5*(lx/nx)^2  # Time step based on stability condition
-Tstart = 0.03
-Tend = 0.1
+Tstart = 0.1
+Tend = 0.2
 STmesh = Penguin.SpaceTimeMesh(mesh, [Tstart, Tstart+Δt], tag=mesh.tag)
 
 # Calculate Stefan number and λ and set initial interface consistently with Tstart
@@ -92,7 +92,7 @@ solver = MovingLiquidDiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, u0, mesh, "BE"
 println("Solving the Stefan problem with simplified direct method (with damped inner iterations)...")
 solver, xf_log = solve_MovingLiquidDiffusionUnsteadyMono_Simple!(
     solver, Fluide, xf, Δt, Tstart, Tend, bc_b, bc, stef_cond, mesh, "BE"; 
-    method=Base.:\, max_inner_iter=2, tol=1e-8, damping=1.0
+    method=Base.:\, max_inner_iter=1, tol=1e-8, damping=1.0
 )
 println("Simulation complete!")
 

@@ -102,6 +102,9 @@ include("liquidmotionsolver/diffusion3d.jl")
 export solve_MovingLiquidDiffusionUnsteadyMono3D!
 export bilinear_interpolation_3d, ensure_periodic_3d!
 
+include("liquidmotionsolver/stefan1d.jl")
+export StefanMono1D, solve_StefanMono1D!
+
 include("liquidmotionsolver/stefan.jl")
 export StefanMono2D, solve_StefanMono2D!
 export StefanDiph2D, solve_StefanDiph2D!

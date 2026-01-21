@@ -492,6 +492,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
     
     # Log interface positions for each time step
     xf_log = Float64[]
+    stefan_residuals = Dict{Int, Vector{Float64}}()
     
     # Determine dimensions
     dims = phase.operator.size
@@ -571,6 +572,10 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
             # Residual: should be zero when satisfied
             stefan_residual = Hₙ₊₁ - Hₙ - velocity
             err = abs(stefan_residual)
+            if !haskey(stefan_residuals, k)
+                stefan_residuals[k] = Float64[]
+            end
+            push!(stefan_residuals[k], err)
             
             if iter == 1
                 # First iteration: direct update
@@ -645,7 +650,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
         println("Max value : $(maximum(abs.(s.x)))")
     end
     
-    return s, xf_log
+    return s, xf_log, stefan_residuals
 end
 
 
@@ -998,7 +1003,7 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
         push!(residuals[1], err)
 
         # 3) Update geometry if not converged
-        if (err <= tol) || (err <= reltol * abs(current_xf))
+        if (err <= tol) || (err <= reltol * abs(current_xf)) || (iter == max_iter)
             push!(xf_log, new_xf)
             break
         end
@@ -1132,7 +1137,7 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
             push!(residuals[k], err)
 
             # 3) Update geometry if not converged
-            if (err <= tol) || (err <= reltol * abs(current_xf))
+            if (err <= tol) || (err <= reltol * abs(current_xf)) || (iter == max_iter)
                 push!(xf_log, new_xf)
                 break
             end
