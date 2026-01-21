@@ -647,21 +647,6 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
         
         # Use the final position
         new_xf = trial_xf
-                STmesh = SpaceTimeMesh(mesh, [tn, tn1], tag=mesh.tag)
-                capacity = Capacity(body, STmesh)
-                operator = DiffusionOps(capacity)
-                phase = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
-                
-                # Rebuild system matrices
-                s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc, scheme)
-                s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, Δt, tn, scheme)
-                BC_border_mono!(s.A, s.b, bc_b, mesh; t=tn1)
-            end
-        end
-        
-        if err > tol
-            println("  Reached max iterations ($max_inner_iter) with err = $err")
-        end
         
         # Log final interface position for this time step
         push!(xf_log, new_xf)
