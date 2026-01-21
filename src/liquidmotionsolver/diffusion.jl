@@ -521,7 +521,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
     Tᵢ = s.x
     
     # Helper function to compute Stefan residual at a given interface position
-    function compute_stefan_residual(trial_xf_local, current_xf_local, tn_local, tn1_local)
+    function compute_stefan_residual(trial_xf_local, current_xf_local, tn_local, tn1_local, Tᵢ_prev)
         # Rebuild geometry
         body_local = (xx, tt, _=0) -> (xx - (current_xf_local * (tn1_local - tt)/Δt + trial_xf_local * (tt - tn_local)/Δt))
         STmesh_local = SpaceTimeMesh(mesh, [tn_local, tn1_local], tag=mesh.tag)
@@ -531,7 +531,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
         
         # Rebuild system matrices
         s.A = A_mono_unstead_diff_moving(phase_local.operator, phase_local.capacity, phase_local.Diffusion_coeff, bc, scheme)
-        s.b = b_mono_unstead_diff_moving(phase_local.operator, phase_local.capacity, phase_local.Diffusion_coeff, phase_local.source, bc, Tᵢ, Δt, tn_local, scheme)
+        s.b = b_mono_unstead_diff_moving(phase_local.operator, phase_local.capacity, phase_local.Diffusion_coeff, phase_local.source, bc, Tᵢ_prev, Δt, tn_local, scheme)
         BC_border_mono!(s.A, s.b, bc_b, mesh; t=tn1_local)
         
         # Solve temperature
@@ -587,7 +587,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
         tn1 = t + Δt
         
         # Compute initial residual
-        residual, velocity, Tᵢ = compute_stefan_residual(trial_xf, current_xf, tn, tn1)
+        residual, velocity, Tᵢ = compute_stefan_residual(trial_xf, current_xf, tn, tn1, Tᵢ)
         err = abs(residual)
         err_prev = err
         
@@ -599,7 +599,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
             # Compute Jacobian using finite differences
             epsilon = max(1e-6, 1e-6 * abs(trial_xf))
             xf_plus = trial_xf + epsilon
-            residual_plus, _, _ = compute_stefan_residual(xf_plus, current_xf, tn, tn1)
+            residual_plus, _, _ = compute_stefan_residual(xf_plus, current_xf, tn, tn1, Tᵢ)
             jacobian = (residual_plus - residual) / epsilon
             
             # Levenberg-Marquardt update: (J^T J + λI) δ = -J^T r
@@ -615,7 +615,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono_Simple!(s::Solver, phase::Phase
             new_xf = trial_xf + delta
             
             # Compute new residual
-            residual_new, velocity_new, Tᵢ_new = compute_stefan_residual(new_xf, current_xf, tn, tn1)
+            residual_new, velocity_new, Tᵢ_new = compute_stefan_residual(new_xf, current_xf, tn, tn1, Tᵢ)
             err_new = abs(residual_new)
             
             # Check if step improved the solution
