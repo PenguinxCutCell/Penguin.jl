@@ -1,6 +1,5 @@
 using Penguin
 using IterativeSolvers
-using WriteVTK
 using CairoMakie
 
 ### 2D Test Case : Diphasic Unsteady Diffusion Equation with a Disk
@@ -28,7 +27,7 @@ operator_c = DiffusionOps(capacity_c)
 bc = Dirichlet(0.0)
 bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:left=>bc, :right=>bc, :bottom=>bc, :top=>bc))
 
-ic = InterfaceConditions(ScalarJump(1.0, 0.5, 0.0), FluxJump(1.0, 1.0, 0.0))
+ic = InterfaceConditions(ScalarJump(1.0, 32.0, 0.0), FluxJump(1.0, 1.0, 0.0))
 
 # Define the source term
 f1 = (x,y,z,t)->0.0
