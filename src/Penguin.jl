@@ -44,7 +44,7 @@ export Phase, Fluid
 include("utils.jl")
 export initialize_temperature_uniform!, initialize_temperature_square!, initialize_temperature_circle!, initialize_temperature_function!
 export initialize_rotating_velocity_field, initialize_radial_velocity_field, initialize_poiseuille_velocity_field
-export volume_redefinition!
+export nusselt_profile, volume_redefinition!
 
 include("interpolation.jl")
 export lin_interpol, quad_interpol, cubic_interpol

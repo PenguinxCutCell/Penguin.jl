@@ -129,6 +129,68 @@ function initialize_radial_velocity_field(nx, ny, lx, ly, x0, y0, center, magnit
     return uₒx, uₒy
 end
 
+"""
+Compute local/mean Nusselt on a 2D interface.
+
+Assumptions:
+- `flux[idx]` returned by `H' * Wᵛ * (...)` is an *integrated* normal heat flux on the
+  interface fragment in cell idx: Q_i ≈ ∫_{Γ_i} q_n ds.
+- `Γ_diag[idx]` is the interface length Γ_i in that cell.
+
+Nu is returned as diameter-based by default (Lchar = 2R).
+"""
+function nusselt_profile(operator::ConvectionOps, capacity::Capacity, state;
+        k::Real, Tw::Real=1.0, Tinf::Real=0.0,
+        Lchar::Real=1.0,  # use D or R depending on your definition
+        Tγ_override=nothing,
+        center=(0.0, 0.0))
+
+    n = prod(operator.size)
+    length(state) >= 2n || throw(ArgumentError("state length $(length(state)) != $(2n)"))
+
+    Tω = @view state[1:n]
+    Tγ = if Tγ_override === nothing
+        @view state[n+1:2n]
+    elseif Tγ_override isa AbstractVector
+        length(Tγ_override) == n || throw(ArgumentError("bad Tγ_override length"))
+        Tγ_override
+    else
+        fill(Tγ_override, n)
+    end
+
+    # Discrete interface contribution (units depend on how Wᵛ is defined)
+    Q = operator.H' * operator.Wꜝ * (operator.G * Tω + operator.H * Tγ)
+
+    Γ = diag(capacity.Γ)
+    idxs = findall(>(0.0), Γ)
+    isempty(idxs) && return Float64[], Float64[], 0.0
+
+    # angles of interface centroids
+    length(capacity.C_γ) >= n || error("Need interface centroids; build with compute_centroids=true.")
+    θ = similar(Float64[], length(idxs))
+    for (j, idx) in enumerate(idxs)
+        c = capacity.C_γ[idx]
+        a = atan(c[2] - center[2], c[1] - center[1])
+        θ[j] = a < 0 ? a + 2π : a
+    end
+
+    ΔT = Tw - Tinf
+    ΔT == 0 && error("ΔT = Tw - Tinf is zero")
+
+    # If Q is integrated on the fragment: qn = Q/Γ
+    Qloc = Q[idxs]
+    Γloc = Γ[idxs]
+    qn_local = Qloc ./ Γloc
+
+    # Convert to Nusselt (choose sign so positive Nu means heat leaving hot wall)
+    Nu_local = (Lchar / (k * ΔT)) .* qn_local
+
+    Nu_mean = sum(Nu_local .* Γloc) / sum(Γloc)
+
+    return θ, Nu_local, Nu_mean
+end
+
+
 
 # Volume redefinition
 function volume_redefinition!(capacity::Capacity{1}, operator::AbstractOperators)

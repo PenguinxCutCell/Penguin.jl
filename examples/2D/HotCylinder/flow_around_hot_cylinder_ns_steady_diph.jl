@@ -3,10 +3,11 @@ using CairoMakie
 using LinearAlgebra
 
 """
-Two-stage demo: (1) solve steady Stokes flow past a circular cylinder in a
-rectangular channel; (2) feed the converged velocity into an unsteady
-advection–diffusion run with a hot cylinder wall. The script saves velocity
-and temperature snapshots, a simple animation, and a VTK dump for inspection.
+Two-stage demo: (1) solve steady Navier–Stokes flow past a circular cylinder
+using a Picard nonlinear solve; (2) feed the converged velocity into an
+unsteady diphasic advection–diffusion run so the cylinder interior
+temperature is explicitly resolved. The script saves velocity and temperature
+snapshots, a simple animation, and a VTK dump for inspection.
 """
 
 ###########
@@ -20,6 +21,8 @@ x0, y0 = -0.5, -0.5
 circle_center = (0.5, 0.0)
 circle_radius = 0.2
 circle_body = (x, y, _=0) -> circle_radius - sqrt((x - circle_center[1])^2 + (y - circle_center[2])^2)
+circle_out = (x, y, _=0) -> circle_body(x, y)
+circle_in = (x, y, _=0) -> -circle_out(x, y)
 
 ###########
 # Meshes
@@ -42,20 +45,20 @@ operator_uy = DiffusionOps(capacity_uy)
 operator_p  = DiffusionOps(capacity_p)
 
 ###########
-# Boundary conditions for Stokes step
+# Boundary conditions for Navier–Stokes step
 ###########
 Umax = 1.0
-parabolic = (x, y) -> begin
+parabolic = (x, y, t=0.0) -> begin
     ξ = (y - (y0 + channel_height/2)) / (channel_height/2)
     Umax * (1 - ξ^2)
 end
 
-ux_left   = Dirichlet((x, y) -> parabolic(x, y))
-ux_right  = Dirichlet((x, y) -> parabolic(x, y))
-ux_bottom = Dirichlet((x, y) -> 0.0)
-ux_top    = Dirichlet((x, y) -> 0.0)
+ux_left   = Dirichlet((x, y, t=0.0) -> parabolic(x, y, t))
+ux_right  = Dirichlet((x, y, t=0.0) -> parabolic(x, y, t))
+ux_bottom = Dirichlet((x, y, t=0.0) -> 0.0)
+ux_top    = Dirichlet((x, y, t=0.0) -> 0.0)
 
-uy_zero = Dirichlet((x, y) -> 0.0)
+uy_zero = Dirichlet((x, y, t=0.0) -> 0.0)
 
 bc_ux = BorderConditions(Dict(
     :left=>ux_left, :right=>ux_right, :bottom=>ux_bottom, :top=>ux_top
@@ -63,14 +66,14 @@ bc_ux = BorderConditions(Dict(
 bc_uy = BorderConditions(Dict(
     :left=>uy_zero, :right=>uy_zero, :bottom=>uy_zero, :top=>uy_zero
 ))
-pressure_gauge = PinPressureGauge()
+pressure_gauge = MeanPressureGauge()
 
 u_bc = Dirichlet(0.0)  # enforce u^γ = 0 on the interface
 
 ###########
 # Fluid properties
 ###########
-μ = 1.0
+μ = 0.01
 ρ = 1.0
 fᵤ = (x, y, z=0.0) -> 0.0
 fₚ = (x, y, z=0.0) -> 0.0
@@ -84,20 +87,21 @@ fluid = Fluid((mesh_ux, mesh_uy),
               μ, ρ, fᵤ, fₚ)
 
 ###########
-# Solve Stokes
+# Solve steady Navier–Stokes (Picard)
 ###########
 nu = prod(operator_ux.size)
 np = prod(operator_p.size)
 x0_vec = zeros(4*nu + np)
 
-stokes_solver = StokesMono(fluid, (bc_ux, bc_uy), pressure_gauge, u_bc; x0=x0_vec)
-solve_StokesMono!(stokes_solver; method=Base.:\)
+ns_solver = NavierStokesMono(fluid, (bc_ux, bc_uy), pressure_gauge, u_bc; x0=x0_vec)
+iters, final_res = solve_NavierStokesMono_steady!(ns_solver; nlsolve_method=:picard, tol=1e-8, maxiter=40, relaxation=1.0)
+println("Picard iterations = ", iters, ", final residual = ", final_res)
 
-println("Stokes flow converged. Unknowns = ", length(stokes_solver.x))
+println("Navier–Stokes flow converged. Unknowns = ", length(ns_solver.x))
 
-uωx = stokes_solver.x[1:nu]
-uωy = stokes_solver.x[2nu+1:3nu]
-pω  = stokes_solver.x[4nu+1:end]
+uωx = ns_solver.x[1:nu]
+uωy = ns_solver.x[2nu+1:3nu]
+pω  = ns_solver.x[4nu+1:end]
 println("Velocity sanity check: max |u_y| = ", maximum(abs, uωy))
 
 ###########
@@ -126,19 +130,26 @@ uₒy = map_field_to_mesh(xs_uy, ys_uy, Uy, Xp, Yp)
 uᵧ = zeros(2 * length(Xp) * length(Yp))  # interface velocity (unused here)
 
 ###########
-# Advection–diffusion setup
+# Diphasic advection–diffusion setup
 ###########
-capacity_T = Capacity(circle_body, mesh_p)
-operator_adv = ConvectionOps(capacity_T, (uₒx, uₒy), uᵧ)
+capacity_out = Capacity(circle_out, mesh_p)
+capacity_in = Capacity(circle_in, mesh_p)
+operator_adv_out = ConvectionOps(capacity_out, (uₒx, uₒy), uᵧ)
+uₒx_zero = zeros(length(uₒx))
+uₒy_zero = zeros(length(uₒy))
+operator_adv_in = ConvectionOps(capacity_in, (uₒx_zero, uₒy_zero), uᵧ)
 
 T_cold = 0.0
 T_hot = 1.0
-κ = (x, y, _=0.0) -> 1.0e-2
+D_in, D_out = 1.0e-2, 1.0e-1
+κ_out = (x, y, _=0.0) -> D_out
+κ_in = (x, y, _=0.0) -> D_in
 f_heat = (x, y, z, t) -> 0.0
 
-phase_heat = Phase(capacity_T, operator_adv, f_heat, κ)
+phase_out = Phase(capacity_out, operator_adv_out, f_heat, κ_out)
+phase_in = Phase(capacity_in, operator_adv_in, f_heat, κ_in)
 
-ic = Dirichlet(T_hot)  # hot cylinder interface
+ic = InterfaceConditions(ScalarJump(1.0, 1.0, 0.0), FluxJump(D_in, D_out, 0.0))
 bc_b = BorderConditions(Dict(
     :left=>Dirichlet(T_cold),
     :right=>Dirichlet(T_cold),
@@ -147,23 +158,17 @@ bc_b = BorderConditions(Dict(
 ))
 
 Nnodes = length(Xp) * length(Yp)
-T0ₒ = fill(T_cold, Nnodes)
-T0ᵧ = fill(T_hot, Nnodes)
+T0ₒ_out = fill(T_cold, Nnodes)
+T0ᵧ_out = fill(T_hot, Nnodes)
+T0ₒ_in = fill(T_hot, Nnodes)
+T0ᵧ_in = fill(T_hot, Nnodes)
 
-# Warm up the interior of the cylinder
-for (j, y) in enumerate(Yp), (i, x) in enumerate(Xp)
-    if circle_body(x, y) > 0   # inside the cylinder
-        idx = i + (j - 1) * length(Xp)
-        T0ₒ[idx] = T_hot
-    end
-end
-
-T0 = vcat(T0ₒ, T0ᵧ)
+T0 = vcat(T0ₒ_out, T0ᵧ_out, T0ₒ_in, T0ᵧ_in)
 
 Δt = 0.01
 Tend = 2.0
-advdiff_solver = AdvectionDiffusionUnsteadyMono(phase_heat, bc_b, ic, Δt, T0, "BE")
-solve_AdvectionDiffusionUnsteadyMono!(advdiff_solver, phase_heat, Δt, Tend, bc_b, ic, "CN"; method=Base.:\)
+advdiff_solver = AdvectionDiffusionUnsteadyDiph(phase_out, phase_in, bc_b, ic, Δt, T0, "BE")
+solve_AdvectionDiffusionUnsteadyDiph!(advdiff_solver, phase_out, phase_in, Δt, Tend, bc_b, ic, "CN"; method=Base.:\)
 
 ###########
 # Outputs: VTK, snapshots, animation
@@ -174,49 +179,51 @@ solve_AdvectionDiffusionUnsteadyMono!(advdiff_solver, phase_heat, Δt, Tend, bc_
 u_speed = sqrt.(reshape(uₒx, (length(Xp), length(Yp))).^2 .+ reshape(uₒy, (length(Xp), length(Yp))).^2)
 
 fig_vel = Figure(resolution=(1100, 450))
-ax_vel = Axis(fig_vel[1, 1], xlabel="x", ylabel="y", title="Stokes speed (used for advection)", aspect=DataAspect())
+ax_vel = Axis(fig_vel[1, 1], xlabel="x", ylabel="y", title="Navier–Stokes speed (used for advection)", aspect=DataAspect())
 hm_vel = heatmap!(ax_vel, Xp, Yp, u_speed; colormap=:plasma)
 contour!(ax_vel, Xp, Yp, [circle_body(x,y) for x in Xp, y in Yp]; levels=[0.0], color=:white, linewidth=2)
 Colorbar(fig_vel[1, 2], hm_vel, label="|u|")
-save("hot_cylinder_velocity.png", fig_vel)
+save("hot_cylinder_velocity_ns_steady_diph.png", fig_vel)
 
 # Temperature snapshots (initial / mid / final) Axis position top to bottom +1 colorbar for all
 states = advdiff_solver.states
 times_to_show = [1, max(1, length(states) ÷ 2), length(states)]
 
+circle_vals = [circle_body(x,y) for x in Xp, y in Yp]
+inside_mask = circle_vals .> 0
+
+function combined_temperature(state, Nnodes, nx_nodes, ny_nodes, inside_mask)
+    T_out = reshape(state[1:Nnodes], (nx_nodes, ny_nodes))
+    T_in = reshape(state[2Nnodes+1:3Nnodes], (nx_nodes, ny_nodes))
+    T_full = copy(T_out)
+    T_full[inside_mask] .= T_in[inside_mask]
+    return T_full
+end
+
 fig_T = Figure(resolution=(1400, 480))
 for (i, t_idx) in enumerate(times_to_show)
     ax_T = Axis(fig_T[1, i], xlabel="x", ylabel="y",
                 title="Temperature at t = $(round((t_idx-1)*Δt, digits=2))", aspect=DataAspect())
-    T_snapshot = reshape(states[t_idx][1:Nnodes], (length(Xp), length(Yp)))
-    # Enforce hot cylinder boundary
-    circle_vals = [circle_body(x,y) for x in Xp, y in Yp]
-    T_snapshot[circle_vals .> 0] .= T_hot
+    T_snapshot = combined_temperature(states[t_idx], Nnodes, length(Xp), length(Yp), inside_mask)
     global hm_T = heatmap!(ax_T, Xp, Yp, T_snapshot; colormap=:viridis, colorrange=(0.0, 1.0))
     contour!(ax_T, Xp, Yp, T_snapshot; levels=0.1:0.2:0.9, color=:black, linewidth=1.0)
     contour!(ax_T, Xp, Yp, circle_vals; levels=[0.0], color=:white, linewidth=2)
 end
 Colorbar(fig_T[1, end+1], hm_T, label="Temperature")
-save("hot_cylinder_temperature_snapshots.png", fig_T)
+save("hot_cylinder_temperature_snapshots_ns_steady_diph.png", fig_T)
 
 # Animation of the temperature field
-Tmin = minimum([minimum(state[1:Nnodes]) for state in states])
-Tmax = maximum([maximum(state[1:Nnodes]) for state in states])
-
 fig_anim = Figure(resolution=(900, 450))
 ax_anim = Axis(fig_anim[1, 1], xlabel="x", ylabel="y",
-               title="Hot cylinder advection–diffusion", aspect=DataAspect())
-T_first = reshape(states[1][1:Nnodes], (length(Xp), length(Yp)))
-circle_vals = [circle_body(x,y) for x in Xp, y in Yp]
-T_first[circle_vals .> 0] .= 1.0
+               title="Hot cylinder advection–diffusion (diphasic)", aspect=DataAspect())
+T_first = combined_temperature(states[1], Nnodes, length(Xp), length(Yp), inside_mask)
 heatmap!(ax_anim, Xp, Yp, T_first; colormap=:viridis, colorrange=(0.0, 1.0))
 contour!(ax_anim, Xp, Yp, T_first; levels=0.1:0.2:0.9, color=:black, linewidth=1.0)
 contour!(ax_anim, Xp, Yp, circle_vals; levels=[0.0], color=:white, linewidth=2)
 
 
-record(fig_anim, "hot_cylinder_temperature.mp4", 1:length(states); framerate=12) do frame
-    T_frame = reshape(states[frame][1:Nnodes], (length(Xp), length(Yp)))
-    T_frame[circle_vals .> 0] .= 1.0
+record(fig_anim, "hot_cylinder_temperature_ns_steady_diph.mp4", 1:length(states); framerate=12) do frame
+    T_frame = combined_temperature(states[frame], Nnodes, length(Xp), length(Yp), inside_mask)
     heatmap!(ax_anim, Xp, Yp, T_frame; colormap=:viridis, colorrange=(0.0, 1.0))
     contour!(ax_anim, Xp, Yp, T_frame; levels=0.1:0.2:0.9, color=:black, linewidth=1.0)
 end
@@ -225,7 +232,9 @@ end
 ###########
 # Nusselt number diagnostics
 ###########
-θ, Nu_local, Nu_mean = nusselt_profile(operator_adv, capacity_T, states[end]; Tγ_override=T_hot, center=circle_center, k=1.0, Lchar=2*circle_radius)
+outer_state = vcat(states[end][1:Nnodes], states[end][Nnodes+1:2Nnodes])
+θ, Nu_local, Nu_mean = nusselt_profile(operator_adv_out, capacity_out, outer_state;
+    center=circle_center, k=1.0e-2, Tw=T_hot, Tinf=T_cold, Lchar=2*circle_radius)
 perm = sortperm(θ)
 θ_sorted = θ[perm]
 Nu_sorted = Nu_local[perm]

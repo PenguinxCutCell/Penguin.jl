@@ -51,3 +51,5 @@ docs/devlog/
 *.gif
 residuals_visualization/
 stefan_1d_convergence_results/
+
+.vscode/
