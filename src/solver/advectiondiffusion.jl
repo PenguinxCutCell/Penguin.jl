@@ -174,6 +174,8 @@ function AdvectionDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc
     s.A = A_mono_unstead_advdiff(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i, Δt, scheme)
     s.b = b_mono_unstead_advdiff(phase.operator, phase.source, phase.capacity, phase.Diffusion_coeff, bc_i, Tᵢ, Δt, 0.0, scheme)
 
+    BC_border_mono!(s.A, s.b, bc_b, phase.capacity.mesh; t=0.0)
+
     return s
 end
 
@@ -307,6 +309,7 @@ function AdvectionDiffusionUnsteadyDiph(phase1::Phase, phase2::Phase, bc_b::Bord
     s.A = A_diph_unstead_advdiff(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, Δt, scheme)
     s.b = b_diph_unstead_advdiff(phase1.operator, phase2.operator, phase1.source, phase2.source, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, Tᵢ, Δt, 0.0, scheme)
 
+    BC_border_diph!(s.A, s.b, bc_b, phase1.capacity, phase2.capacity; t=0.0)
     return s
 end
 

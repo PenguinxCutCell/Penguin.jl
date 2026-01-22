@@ -130,7 +130,7 @@ uᵧ = zeros(2 * length(Xp) * length(Yp))  # interface velocity (unused here)
 ###########
 # Advection–diffusion setup
 ###########
-capacity_T = Capacity(circle_body, mesh_p)
+capacity_T = Capacity(circle_body, mesh_p ; compute_centroids=true)
 operator_adv = ConvectionOps(capacity_T, (uₒx, uₒy), uᵧ)
 
 T_cold = 0.0
@@ -215,14 +215,14 @@ heatmap!(ax_anim, Xp, Yp, T_first; colormap=:viridis, colorrange=(0.0, 1.0))
 contour!(ax_anim, Xp, Yp, T_first; levels=0.1:0.2:0.9, color=:black, linewidth=1.0)
 contour!(ax_anim, Xp, Yp, circle_vals; levels=[0.0], color=:white, linewidth=2)
 
-
+"""
 record(fig_anim, "hot_cylinder_temperature_ns_steady.mp4", 1:length(states); framerate=12) do frame
     T_frame = reshape(states[frame][1:Nnodes], (length(Xp), length(Yp)))
     T_frame[circle_vals .> 0] .= 1.0
     heatmap!(ax_anim, Xp, Yp, T_frame; colormap=:viridis, colorrange=(0.0, 1.0))
     contour!(ax_anim, Xp, Yp, T_frame; levels=0.1:0.2:0.9, color=:black, linewidth=1.0)
 end
-
+"""
 
 ###########
 # Nusselt number diagnostics
@@ -233,3 +233,8 @@ perm = sortperm(θ)
 Nu_sorted = Nu_local[perm]
 Nu_theta = (θ=θ_sorted, Nu=Nu_sorted)
 println("Mean Nusselt number on the cylinder ≈ ", Nu_mean)
+
+fig_nu = Figure(resolution=(800, 400))
+ax_nu = Axis(fig_nu[1, 1], xlabel="θ", ylabel="Nu", title="Nusselt vs θ")
+lines!(ax_nu, 1:length(θ_sorted), Nu_sorted, linewidth=2)
+save("hot_cylinder_nusselt_vs_theta_ns_steady.png", fig_nu)
