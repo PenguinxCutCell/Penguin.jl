@@ -10,6 +10,7 @@ using Statistics
 using FFTW
 using DSP
 using Roots
+using FrontCutTracking
 
 ### 2D Test Case: Melting Circle (Stefan Problem with Circular Interface)
 ### Ice sphere melting in warm liquid with self-similar solution
@@ -19,6 +20,7 @@ L = 1.0      # Latent heat
 c = 1.0      # Specific heat capacity
 TM = 0.0     # Melting temperature (at interface)
 T∞ = 0.5     # Far field temperature (warm liquid) - POSITIVE for melting
+α = 1.0      # Thermal diffusivity
 
 # Calculate the Stefan number (now positive for melting)
 Ste = (c * (T∞ - TM)) / L
@@ -29,43 +31,45 @@ function F(s)
     return expint(s^2/4)  # E₁(s²/4)
 end
 
-# Calculate the similarity parameter S for melting
-# For melting, S has a different value than for freezing
-S = 1.56
-println("Similarity parameter S = $S")
+# Determine the similarity parameter λ from the transcendental Stefan condition
+stefan_eq(k) = k^2 * exp(-k^2) / (-expint(k^2)) - Ste
+λ = 0.6893
+println("Similarity parameter λ = $λ")
 
 # Set initial conditions
 R0 = 3.0      # Initial radius (larger to see melting progress)
-t_init = 1.0  # Initial time
-t_final = 1.1 # Final time
+t_init = 0.1
+t_final = 0.2 # Final time
 
 # Analytical temperature function for melting
 function analytical_temperature(r, t)
-    # Calculate similarity variable
-    s = r / sqrt(t)
-    
-    if s < S
+    s_interface = interface_position(t) / sqrt(α * t)
+    s = r / sqrt(α * t)
+
+    if s < s_interface
         return TM  # At and inside the solid (ice)
     else
         # In liquid region, use the similarity solution
-        return T∞ * (1.0 - F(s)/F(S))
+        return T∞ * (1.0 - F(s)/F(s_interface))
     end
 end
 
 # Function to calculate the interface position at time t (decreasing radius)
 function interface_position(t)
-    return S * sqrt(t)
+    return max(R0 - 2 * λ * sqrt(α * t), 0.0)
 end
 
 function analytical_flux(t)
-    return (k * T∞ / F(S)) * exp(-S^2) / sqrt(t)  # Note sign change for melting
+    s_interface = interface_position(t) / sqrt(α * t)
+    κ = 1.0  # Thermal conductivity
+    return (κ * T∞ / F(s_interface)) * exp(-s_interface^2) / sqrt(α * t)  # Note sign change for melting
 end
 
 # Print information about the simulation
 println("Initial radius at t=$t_init: R=$(interface_position(t_init))")
 
 # Define the spatial mesh
-nx, ny = 32, 32
+nx, ny = 64, 64
 lx, ly = 16.0, 16.0
 x0, y0 = -8.0, -8.0
 Δx, Δy = lx/(nx), ly/(ny)
@@ -74,7 +78,7 @@ mesh = Penguin.Mesh((nx, ny), (lx, ly), (x0, y0))
 println("Mesh created with dimensions: $(nx) x $(ny), Δx=$(Δx), Δy=$(Δy)")
 
 # Create the front-tracking body
-nmarkers = 100
+nmarkers = 50
 front = FrontTracker() 
 create_circle!(front, 0.01, 0.01, interface_position(t_init), nmarkers)
 
@@ -82,14 +86,14 @@ create_circle!(front, 0.01, 0.01, interface_position(t_init), nmarkers)
 body = (x, y, t, _=0) -> -sdf(front, x, y)
 
 # Define the Space-Time mesh
-Δt = 0.15*(lx / nx)^2  # Time step size
-t_final = t_init + 7Δt
+Δt = 0.25*(lx / nx)^2  # Time step size
+t_final = t_init + 20Δt
 println("Final radius at t=$(t_init + Δt): R=$(interface_position(t_init + Δt))")
 
 STmesh = Penguin.SpaceTimeMesh(mesh, [t_init, t_init + Δt], tag=mesh.tag)
 
 # Define the capacity
-capacity = Capacity(body, STmesh; compute_centroids=false)
+capacity = Capacity(body, STmesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
 
 # Define the diffusion operator
 operator = DiffusionOps(capacity)
@@ -111,7 +115,7 @@ Fluide = Phase(capacity, operator, f, K)
 # Set up initial condition
 u0ₒ = zeros((nx+1)*(ny+1))
 body_init = (x,y,_=0) -> -sdf(front, x, y)
-cap_init = Capacity(body_init, mesh; compute_centroids=false)
+cap_init = Capacity(body_init, mesh; method="VOFI", integration_method=:vofijul, compute_centroids=false)
 centroids = cap_init.C_ω
 
 # Initialize the temperature
@@ -144,7 +148,7 @@ lines!(ax_init, marker_x, marker_y, color=:black, linewidth=2)
 display(fig_init)
 
 # Newton parameters
-Newton_params = (10, 1e-6, 1e-6, 1.0) # max_iter, tol, reltol, α
+Newton_params = (1, 1e-6, 1e-6, 1.0) # max_iter, tol, reltol, α
 
 # Run the simulation
 solver = StefanMono2D(Fluide, bc_b, bc, Δt, u0, mesh, "BE")

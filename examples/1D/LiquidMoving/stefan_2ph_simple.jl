@@ -40,8 +40,8 @@ x_offset = mesh.nodes[1][1] - x0
 Δx = lx / nx
 
 Δt = 0.5 * Δx^2
-Tstart = 0.03
-Tend = 0.1
+Tstart = 0.1
+Tend = 0.2
 STmesh = Penguin.SpaceTimeMesh(mesh, [Tstart, Tstart + Δt], tag=mesh.tag)
 
 # Material/thermal parameters (symmetric case)
@@ -86,10 +86,10 @@ u0ᵧ2 = fill(T_m, nx + 1)
 u0 = vcat(u0ₒ1, u0ᵧ1, u0ₒ2, u0ᵧ2)
 
 # Solver setup
-solver = MovingLiquidDiffusionUnsteadyDiph(phase1, phase2, bc_b, ic, Δt, u0, mesh, "BE")
+solver = MovingLiquidDiffusionUnsteadyDiph(phase1, phase2, bc_b, ic, Δt, u0, mesh, "CN")
 println("Solving two-phase Stefan problem (1D, symmetric) with analytical comparison...")
 solver, residuals, xf_log = solve_MovingLiquidDiffusionUnsteadyDiph!(
-    solver, phase1, phase2, xf0, Δt, Tstart, Tend, bc_b, ic, mesh, "BE";
+    solver, phase1, phase2, xf0, Δt, Tstart, Tend, bc_b, ic, mesh, "CN";
     Newton_params=(1, 1e-10, 1e-10, 1.0),
     method=Base.:\,
     adaptive_timestep=false,
