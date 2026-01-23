@@ -2,10 +2,11 @@ using Penguin
 using IterativeSolvers, SpecialFunctions
 using Roots
 using CairoMakie
+using Statistics
 
 ### 2D Test Case: Monophasic Unsteady Diffusion Equation inside an oscillating Disk with Manufactured Solution
 # Define the mesh - larger domain to accommodate oscillation
-nx, ny = 64, 64
+nx, ny = 16, 16
 lx, ly = 4.0, 4.0  
 x0, y0 = 0.0, 0.0
 domain = ((x0, lx), (y0, ly))
@@ -30,11 +31,40 @@ function translating_body(x, y, t)
     return sqrt((x - x_t)^2 + (y - y_t)^2) - radius
 end
 
+# Analytical solution for a translating disk: same as static radial heat solution,
+# evaluated in the moving frame.
+function j0_zeros(N; guess_shift=0.25)
+    zs = zeros(Float64, N)
+    for m in 1:N
+        x_left  = (m - guess_shift - 0.5) * pi
+        x_right = (m - guess_shift + 0.5) * pi
+        x_left = max(x_left, 1e-6)
+        zs[m] = find_zero(besselj0, (x_left, x_right))
+    end
+    return zs
+end
+
+const J0_ZEROS = j0_zeros(1000)
+
+function Φ_ana(x, y, t)
+    x_t = x_0_initial + velocity_x * t
+    y_t = y_0_initial + velocity_y * t
+    r = sqrt((x - x_t)^2 + (y - y_t)^2)
+    if r >= radius
+        return NaN
+    end
+    s = 0.0
+    for αm in J0_ZEROS
+        s += exp(-D * αm^2 * t / radius^2) * besselj0(αm * (r / radius)) / (αm * besselj1(αm))
+    end
+    return 1.0 - 2.0 * s
+end
+
 # Define the Space-Time mesh
-Δt = 0.5*(lx/nx)^2  # Time step based on mesh size
+Δt = 0.25*(lx/nx)^2  # Time step based on mesh size
 Tstart = 0.01  # Start at small positive time to avoid t=0 singularity
 Tend = 0.2
-STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
+STmesh = Penguin.SpaceTimeMesh(mesh, [Tstart, Δt], tag=mesh.tag)
 
 # Define the capacity
 capacity = Capacity(translating_body, STmesh)
@@ -72,37 +102,10 @@ f = (x,y,z,t) -> 0.0
 # Define the phase with source term from manufactured solution
 Fluide = Phase(capacity, operator, f, (x,y,z) -> D)
 
-# Create initial condition arrays with Gaussian bump
-# Calculate mesh nodes coordinates
-mesh_nodes_x = repeat(mesh.nodes[1], outer=length(mesh.nodes[2]))
-mesh_nodes_y = repeat(mesh.nodes[2], inner=length(mesh.nodes[1]))
+# Create initial condition arrays from analytical solution at Tstart
 npts = (nx+1)*(ny+1)
-
-# Parameters for the Gaussian bump
-amplitude = 1.0       # Maximum temperature value
-sigma = radius / 10.0  # Controls the width of the Gaussian (related to disk radius)
-
-# Initialize temperature arrays
-T0ₒ = zeros((nx+1)*(ny+1))
-T0ᵧ = zeros((nx+1)*(ny+1))
-
-# Fill arrays with Gaussian values
-for i in 1:length(mesh_nodes_x)
-    x = mesh_nodes_x[i]
-    y = mesh_nodes_y[i]
-    
-    # Distance from initial disk center
-    dist = sqrt((x - x_0_initial)^2 + (y - y_0_initial)^2)
-    
-    # Gaussian function
-    if dist <= 2*radius  # Only apply within a reasonable distance
-        T0ₒ[i] = amplitude * exp(-(dist^2) / (2*sigma^2))
-    end
-    # Boundary values remain at zero
-end
-
-# Set the same values for boundary temperatures
-T0ᵧ = copy(T0ₒ)
+T0ₒ = zeros(npts)
+T0ᵧ = ones(npts)
 
 T0 = vcat(T0ₒ, T0ᵧ)
 
@@ -110,19 +113,59 @@ T0 = vcat(T0ₒ, T0ᵧ)
 solver = MovingAdvDiffusionUnsteadyMono(Fluide, bc_b, ic, Δt, T0, mesh, "BE")
 
 # Solve the problem
-solve_MovingAdvDiffusionUnsteadyMono!(solver, Fluide, translating_body, Δt, Tstart, Tend, bc_b, ic, mesh, "BE", uₒ, uᵧ; method=Base.:\)
+capacity_states = solve_MovingAdvDiffusionUnsteadyMono!(solver, Fluide, translating_body, Δt, Tstart, Tend, bc_b, ic, mesh, "CN", uₒ, uᵧ; method=Base.:\)
 
-# Check errors based on last body 
-body_tend = (x, y,_=0) ->  begin
-    # Calculate center position at Tend
-    x_t = x_0_initial + velocity_x * Tend
-    y_t = y_0_initial + velocity_y * Tend
-    # Return signed distance function to disk at Tend
-    return sqrt((x - x_t)^2 + (y - y_t)^2) - radius
+cap_final = capacity_states[end]
+centroids = cap_final.C_ω
+t_final = isempty(centroids) ? Tstart + (length(solver.states) - 1) * Δt : centroids[1][3]
+println("Analytical comparison time: ", t_final)
+u_num1 = solver.x[1:length(centroids)]
+u_ana1 = similar(u_num1)
+for i in eachindex(centroids)
+    c = centroids[i]
+    u_ana1[i] = Φ_ana(c[1], c[2], c[3])
 end
-capacity_tend = Capacity(body_tend, mesh; compute_centroids=false)
-#Φ_ana_tend(x, y) = Φ_ana(x, y, Tend)
-#u_ana1, u_num1, global_err1, full_err1, cut_err1, empty_err1 = check_convergence(Φ_ana_tend, solver, capacity_tend, 2, false)
+
+mask = .!isnan.(u_ana1)
+if any(mask)
+    err = u_ana1[mask] .- u_num1[mask]
+    global_err1 = sqrt(mean(err .^ 2))
+    linf_err1 = maximum(abs.(err))
+    println("Centroid L2 error    = $global_err1")
+    println("Centroid L∞ error    = $linf_err1")
+else
+    println("No valid analytical points found at Tend for comparison.")
+end
+
+# Plot analytical vs numerical (masked outside the disk)
+nx_plot = length(cap_final.mesh.nodes[1])
+ny_plot = length(cap_final.mesh.nodes[2])
+if length(centroids) == nx_plot * ny_plot && any(mask)
+    u_ana_plot = reshape(u_ana1, (nx_plot, ny_plot))
+    u_num_plot = reshape(u_num1, (nx_plot, ny_plot))
+    u_num_plot[isnan.(u_ana_plot)] .= NaN
+
+    vals = vcat(u_ana1[mask], u_num1[mask])
+    clims = (minimum(vals), maximum(vals))
+
+    fig_cmp = Figure()
+    ax_a = Axis(fig_cmp[1, 1], xlabel="x", ylabel="y", title="Analytical")
+    ax_n = Axis(fig_cmp[1, 2], xlabel="x", ylabel="y", title="Numerical")
+    hm_a = heatmap!(ax_a, cap_final.mesh.nodes[1], cap_final.mesh.nodes[2], u_ana_plot', colormap=:viridis, colorrange=clims)
+    hm_n = heatmap!(ax_n, cap_final.mesh.nodes[1], cap_final.mesh.nodes[2], u_num_plot', colormap=:viridis, colorrange=clims)
+    Colorbar(fig_cmp[1, 3], hm_a, label="u(x)")
+    display(fig_cmp)
+
+    # Plot absolute error
+    err_plot = u_ana_plot .- u_num_plot
+    fig_err = Figure()
+    ax_e = Axis(fig_err[1, 1], xlabel="x", ylabel="y", title="Absolute Error")
+    hm_e = heatmap!(ax_e, cap_final.mesh.nodes[1], cap_final.mesh.nodes[2], abs.(err_plot)', colormap=:viridis)
+    Colorbar(fig_err[1, 2], hm_e, label="|u_ana - u_num|")
+    display(fig_err)
+else
+    println("Skipping plots: unexpected centroid count or empty analytic mask.")
+end
 
 using CSV, DataFrames
 # Function to save simulation data to CSV files - adapted for translating disk

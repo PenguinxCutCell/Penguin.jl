@@ -52,7 +52,7 @@ function run_moving_heat_benchmark(
         Tstart = 0.01  # Start at small positive time to avoid t=0 singularity
         
         # Create space-time mesh
-        STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
+        STmesh = Penguin.SpaceTimeMesh(mesh, [Tstart, Δt], tag=mesh.tag)
         
         # Define capacity with moving body
         capacity = Capacity(translating_body, STmesh)
@@ -97,7 +97,7 @@ function run_moving_heat_benchmark(
         # Solve the problem
         solve_MovingAdvDiffusionUnsteadyMono!(solver, Fluide, translating_body, 
                                              Δt, Tstart, Tend, bc_b, ic, 
-                                             mesh, "BE", uₒ, uᵧ; method=Base.:\)
+                                             mesh, "CN", uₒ, uᵧ; method=Base.:\)
         
         # Create analytical solution function for final time
         u_analytical = (x, y) -> analytical_solution(x, y, Tend, x_0_initial, y_0_initial, 
@@ -256,7 +256,7 @@ end
 
 # Analytical solution function (shifted to follow the moving center)
 function analytical_solution(x, y, t, x_0_initial, y_0_initial, velocity_x, velocity_y, 
-                           radius, D, alphas=j0_zeros(100))
+                           radius, D, alphas=j0_zeros(1000))
     # Calculate center position at time t
     x_t = x_0_initial + velocity_x * t
     y_t = y_0_initial + velocity_y * t
@@ -273,18 +273,18 @@ function analytical_solution(x, y, t, x_0_initial, y_0_initial, velocity_x, velo
     s = 0.0
     for m in 1:length(alphas)
         αm = alphas[m]
-        s += exp(-αm^2 * D * t) * besselj0(αm * (r / radius)) / (αm * besselj1(αm))
+        s += exp(-αm^2 * D * t / radius^2) * besselj0(αm * (r / radius)) / (αm * besselj1(αm))
     end
     return 1.0 - 2.0*s
 end
 
 # Example usage:
-nx_list = [32, 64, 128, 256]
-ny_list = [32, 64, 128, 256]
-radius = 0.75
+nx_list = [8, 16, 32, 64, 128]
+ny_list = nx_list
+radius = 1.0
 x_0_initial = 2.01
 y_0_initial = 2.01
-velocity_x = 2.0
+velocity_x = 0.0
 velocity_y = 0.0
 D = 1.0
 Tend = 0.1

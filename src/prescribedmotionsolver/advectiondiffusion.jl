@@ -209,12 +209,15 @@ function solve_MovingAdvDiffusionUnsteadyMono!(s::Solver, phase::Phase, body::Fu
     println("- Unsteady problem")
     println("- Advection-Diffusion problem")
 
+    capacity_states = Vector{AbstractCapacity}()
+
     # Solve system for the initial condition
     t=Tₛ
     println("Time : $(t)")
     solve_system!(s; method, algorithm=algorithm, kwargs...)
 
     push!(s.states, s.x)
+    push!(capacity_states, phase.capacity)
     println("Solver Extremum : ", maximum(abs.(s.x)))
     Tᵢ = s.x
     
@@ -235,10 +238,12 @@ function solve_MovingAdvDiffusionUnsteadyMono!(s::Solver, phase::Phase, body::Fu
         solve_system!(s; method, algorithm=algorithm, kwargs...)
 
         push!(s.states, s.x)
+        push!(capacity_states, capacity)
         println("Solver Extremum : ", maximum(abs.(s.x)))
         Tᵢ = s.x
     end
 
+    return capacity_states
 end
 
 

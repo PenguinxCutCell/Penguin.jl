@@ -13,7 +13,7 @@ mesh = Penguin.Mesh((nx, ny), (lx, ly), (x0, y0))
 
 # Define translation parameters
 radius = 1.0       # Constant radius of disk
-velocity_x = 0.0    # Translation velocity in x-direction
+velocity_x = 1.0    # Translation velocity in x-direction
 velocity_y = 0.0    # Translation velocity in y-direction
 x_0_initial = 2.01   # Initial x-position
 y_0_initial = 2.01  # Initial y-position

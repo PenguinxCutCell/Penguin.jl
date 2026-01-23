@@ -4,7 +4,7 @@ using VTKOutputs
 
 ### 2D Test Case : Monophasic Unsteady Diffusion Equation inside a Disk
 # Define the mesh
-nx, ny = 80, 80
+nx, ny = 40, 40
 lx, ly = 4., 4.
 x0, y0 = 0., 0.
 domain = ((x0, lx), (y0, ly))
@@ -23,7 +23,7 @@ operator = DiffusionOps(capacity)
 cell_types = capacity.cell_types
 
 # Define the boundary conditions 
-bc = Dirichlet((x,y,z,t)->sin(π*x) * sin(π*y))
+bc = Dirichlet((x,y,z,t)->1.0)
 bc0 = Dirichlet(0.0)
 
 bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:left => bc0, :right => bc0, :top => bc0, :bottom => bc0))
