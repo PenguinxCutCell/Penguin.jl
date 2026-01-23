@@ -16,7 +16,7 @@ using Roots
 # ------------------------------------------------------------
 # Problem definition
 # ------------------------------------------------------------
-nx = 64
+nx = 32
 lx = 1.0
 x0 = 0.0
 mesh = Penguin.Mesh((nx,), (lx,), (x0,))
@@ -72,7 +72,7 @@ phase2 = Phase(capacity_c, operator_c, f2, K2)
 
 # Boundary and interface conditions
 bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:top => Dirichlet(T_top), :bottom => Dirichlet(T_bottom)))
-ic = InterfaceConditions(ScalarJump(1.0, 1.0, T_m), FluxJump(1.0, 1.0, ρ * Lh))
+ic = InterfaceConditions(ScalarJump(1.0, 0.0, T_m), FluxJump(1.0, 1.0, ρ * Lh))
 
 # Initial condition from specified profile
 x_phys = mesh.nodes[1] .- x_offset
@@ -103,7 +103,7 @@ solver = MovingLiquidDiffusionUnsteadyDiph(phase1, phase2, bc_b, ic, Δt, u0, me
 println("Solving Favier two-phase Stefan problem...")
 solver, residuals, xf_log = solve_MovingLiquidDiffusionUnsteadyDiph!(
     solver, phase1, phase2, xf0, Δt, Tstart, Tend, bc_b, ic, mesh, "BE";
-    Newton_params=(10, 1e-10, 1e-10, 1.0),
+    Newton_params=(1, 1e-10, 1e-10, 1.0),
     method=Base.:\,
     adaptive_timestep=false,
     cfl_target=0.5

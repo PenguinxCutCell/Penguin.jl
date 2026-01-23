@@ -69,7 +69,7 @@ end
 println("Initial radius at t=$t_init: R=$(interface_position(t_init))")
 
 # Define the spatial mesh
-nx, ny = 64, 64
+nx, ny = 32, 32
 lx, ly = 16.0, 16.0
 x0, y0 = -8.0, -8.0
 Δx, Δy = lx/(nx), ly/(ny)
@@ -78,7 +78,7 @@ mesh = Penguin.Mesh((nx, ny), (lx, ly), (x0, y0))
 println("Mesh created with dimensions: $(nx) x $(ny), Δx=$(Δx), Δy=$(Δy)")
 
 # Create the front-tracking body
-nmarkers = 50
+nmarkers = 100
 front = FrontTracker() 
 create_circle!(front, 0.01, 0.01, interface_position(t_init), nmarkers)
 
@@ -87,7 +87,7 @@ body = (x, y, t, _=0) -> -sdf(front, x, y)
 
 # Define the Space-Time mesh
 Δt = 0.25*(lx / nx)^2  # Time step size
-t_final = t_init + 20Δt
+t_final = t_init + 11Δt
 println("Final radius at t=$(t_init + Δt): R=$(interface_position(t_init + Δt))")
 
 STmesh = Penguin.SpaceTimeMesh(mesh, [t_init, t_init + Δt], tag=mesh.tag)
@@ -136,7 +136,7 @@ ax_init = Axis(fig_init[1, 1],
                aspect=DataAspect())
 hm = heatmap!(ax_init, mesh.nodes[1], mesh.nodes[2], 
               reshape(u0ₒ, (nx+1, ny+1)),
-              colormap=:thermal)
+              colormap=:ice)
 Colorbar(fig_init[1, 2], hm, label="Temperature")
 
 # Add interface contour
@@ -204,7 +204,7 @@ function create_temperature_interface_animation(solver, mesh, xf_log, timestep_h
         Tmat = reshape(Tw, (nx1, ny1))
         
         # Display temperature heatmap
-        hm = heatmap!(ax, xi, yi, Tmat, colormap=:thermal, colorrange=temp_limits)
+        hm = heatmap!(ax, xi, yi, Tmat, colormap=:ice, colorrange=temp_limits)
         Colorbar(fig[1, 2], hm, label="Temperature")
         
         # Overlay interface if available for this timestep
