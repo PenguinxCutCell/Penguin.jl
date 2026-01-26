@@ -130,18 +130,16 @@ function initialize_radial_velocity_field(nx, ny, lx, ly, x0, y0, center, magnit
 end
 
 """
-Compute local/mean Nusselt on a 2D interface.
+Compute local and mean Nusselt number from the integrated interfacial flux.
 
 Assumptions:
-- `flux[idx]` returned by `H' * Wᵛ * (...)` is an *integrated* normal heat flux on the
-  interface fragment in cell idx: Q_i ≈ ∫_{Γ_i} q_n ds.
-- `Γ_diag[idx]` is the interface length Γ_i in that cell.
-
-Nu is returned as diameter-based by default (Lchar = 2R).
+- `Q = H' * Wᵛ * (...)` is the *integrated* normal heat flux on each interface fragment:
+  Q_i ≈ ∫_{Γ_i} q_n ds.
+- `Γ[i]` is the interface length in cell i.
 """
 function nusselt_profile(operator::ConvectionOps, capacity::Capacity, state;
-        k::Real, Tw::Real=1.0, Tinf::Real=0.0,
-        Lchar::Real=1.0,  # use D or R depending on your definition
+        k::Real, T_ref::Real=0.0,
+        Lchar::Real=1.0,
         Tγ_override=nothing,
         center=(0.0, 0.0))
 
@@ -158,14 +156,14 @@ function nusselt_profile(operator::ConvectionOps, capacity::Capacity, state;
         fill(Tγ_override, n)
     end
 
-    # Discrete interface contribution (units depend on how Wᵛ is defined)
+    # Discrete volume interface contribution: ∫_{Γ} q_n ds
     Q = operator.H' * operator.Wꜝ * (operator.G * Tω + operator.H * Tγ)
 
     Γ = diag(capacity.Γ)
     idxs = findall(>(0.0), Γ)
     isempty(idxs) && return Float64[], Float64[], 0.0
 
-    # angles of interface centroids
+    # angles of interface centroids (optional, for plotting profiles)
     length(capacity.C_γ) >= n || error("Need interface centroids; build with compute_centroids=true.")
     θ = similar(Float64[], length(idxs))
     for (j, idx) in enumerate(idxs)
@@ -174,15 +172,15 @@ function nusselt_profile(operator::ConvectionOps, capacity::Capacity, state;
         θ[j] = a < 0 ? a + 2π : a
     end
 
-    ΔT = Tw - Tinf
-    ΔT == 0 && error("ΔT = Tw - Tinf is zero")
+    # Mean interfacial temperature (Γ-weighted)
+    T_interface = sum(Tγ[idxs] .* Γ[idxs]) / sum(Γ[idxs])
+    ΔT = T_interface - T_ref
+    ΔT == 0 && error("ΔT = T_interface - T_ref is zero")
 
-    # If Q is integrated on the fragment: qn = Q/Γ
+    # Local flux and Nusselt (local uses mean interface temperature as reference)
     Qloc = Q[idxs]
     Γloc = Γ[idxs]
-    qn_local = Qloc ./ Γloc
-
-    # Convert to Nusselt (choose sign so positive Nu means heat leaving hot wall)
+    qn_local = (k .* Qloc) ./ Γloc
     Nu_local = (Lchar / (k * ΔT)) .* qn_local
 
     Nu_mean = sum(Nu_local .* Γloc) / sum(Γloc)

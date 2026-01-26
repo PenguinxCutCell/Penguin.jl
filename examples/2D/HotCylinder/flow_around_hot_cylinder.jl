@@ -12,9 +12,9 @@ and temperature snapshots, a simple animation, and a VTK dump for inspection.
 ###########
 # Geometry
 ###########
-nx, ny = 192, 96
-channel_length = 4.0
-channel_height = 1.0
+nx, ny = 64, 64
+channel_length = 10.0
+channel_height = 10.0
 x0, y0 = -0.5, -0.5
 
 circle_center = (0.5, 0.0)
@@ -133,7 +133,8 @@ operator_adv = ConvectionOps(capacity_T, (uₒx, uₒy), uᵧ)
 
 T_cold = 0.0
 T_hot = 1.0
-κ = (x, y, _=0.0) -> 1.0e-2
+k = 1.0e-2  # thermal diffusivity
+κ = (x, y, _=0.0) -> k
 f_heat = (x, y, z, t) -> 0.0
 
 phase_heat = Phase(capacity_T, operator_adv, f_heat, κ)
@@ -160,10 +161,69 @@ end
 
 T0 = vcat(T0ₒ, T0ᵧ)
 
-Δt = 0.01
-Tend = 2.0
+Δt = 0.5 * min(dx, dy)^2
+Tend = 10.0
 advdiff_solver = AdvectionDiffusionUnsteadyMono(phase_heat, bc_b, ic, Δt, T0, "BE")
 solve_AdvectionDiffusionUnsteadyMono!(advdiff_solver, phase_heat, Δt, Tend, bc_b, ic, "CN"; method=Base.:\)
+
+
+n = prod(operator_adv.size)
+Tω = @view advdiff_solver.states[end][1:n]
+Tγ = @view advdiff_solver.states[end][n+1:2n]
+
+# Discrete volume interface contribution : volume integrated normal heat flux on the interface : ∫_{Γ} q_n ds
+Q = operator_adv.H' * operator_adv.Wꜝ * (operator_adv.G * Tω + operator_adv.H * Tγ)
+
+# Extract interface lengths
+Γ = diag(capacity_T.Γ)
+
+# Compute mean interfacial fluxes : ∫_{Γ} q_n ds. It is already integrated over the interface length
+q_nds = Q 
+
+# Divide by total interface length to get mean flux
+q_n_mean = sum(q_nds[.!isnan.(q_nds)])
+q_n_mean /= sum(Γ)
+
+# Multiply by diffusivity to get flux
+q_n_mean *= k
+
+println("Mean interfacial heat flux: $q_n_mean")
+
+# Compute mean temperature at the interface
+T_interface = 0.0
+for i in 1:length(Tγ)
+    if !isnan(Γ[i]) && Γ[i] > 0.0
+        global T_interface += Tγ[i] * Γ[i]
+    end
+end
+T_interface /= sum(Γ[.!isnan.(Γ)])
+println("Mean interfacial temperature: $T_interface")
+
+# compute heat transfer coefficient
+T_ref = 0.0  # reference temperature in liquid far from interface
+h = q_n_mean / (T_interface - T_ref)
+println("Heat transfer coefficient h: $h")
+
+# Characteristic length
+L = 2 * circle_radius
+
+# Compute Nusselt number
+Nu = h * L / k
+println("Nusselt number Nu: $Nu")
+
+
+
+
+###########
+# Nusselt number diagnostics
+###########
+θ, Nu_local, Nu_mean = nusselt_profile(operator_adv, capacity_T, advdiff_solver.states[end]; Tγ_override=T_hot, center=circle_center, k=k, Lchar=2*circle_radius)
+perm = sortperm(θ)
+θ_sorted = θ[perm]
+Nu_sorted = Nu_local[perm]
+Nu_theta = (θ=θ_sorted, Nu=Nu_sorted)
+println("Mean Nusselt number on the cylinder ≈ ", Nu_mean)
+
 
 ###########
 # Outputs: VTK, snapshots, animation
@@ -220,14 +280,3 @@ record(fig_anim, "hot_cylinder_temperature.mp4", 1:length(states); framerate=12)
     heatmap!(ax_anim, Xp, Yp, T_frame; colormap=:viridis, colorrange=(0.0, 1.0))
     contour!(ax_anim, Xp, Yp, T_frame; levels=0.1:0.2:0.9, color=:black, linewidth=1.0)
 end
-
-
-###########
-# Nusselt number diagnostics
-###########
-θ, Nu_local, Nu_mean = nusselt_profile(operator_adv, capacity_T, states[end]; Tγ_override=T_hot, center=circle_center, k=1.0, Lchar=2*circle_radius)
-perm = sortperm(θ)
-θ_sorted = θ[perm]
-Nu_sorted = Nu_local[perm]
-Nu_theta = (θ=θ_sorted, Nu=Nu_sorted)
-println("Mean Nusselt number on the cylinder ≈ ", Nu_mean)
