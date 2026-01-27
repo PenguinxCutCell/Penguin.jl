@@ -11,7 +11,7 @@ cut-cell path. The cut/interface BC enforces u^γ = 0.
 ###########
 # Geometry
 ###########
-nx, ny = 256, 128
+nx, ny = 32, 16
 channel_length = 4.0
 channel_height = 1.0
 x0, y0 = -0.5, -0.5
@@ -51,7 +51,7 @@ parabolic = (x, y) -> begin
 end
 
 ux_left   = Dirichlet((x, y) -> parabolic(x, y))
-ux_right  = Dirichlet((x, y) -> parabolic(x, y))
+ux_right  = Outflow()
 ux_bottom = Dirichlet((x, y) -> 0.0)
 ux_top    = Dirichlet((x, y) -> 0.0)
 
@@ -137,3 +137,59 @@ contour!(ax_contours, xs, ys, [circle_body(x,y) for x in xs, y in ys]; levels=[0
 
 display(fig)
 save("stokes2d_circle_flow.png", fig)
+
+n_p = prod(operator_p.size)
+n_ux = prod(operator_ux.size)
+n_uy = prod(operator_uy.size)
+
+uωx = solver.x[1:n_ux]
+uγx = solver.x[n_ux+1:2n_ux]
+uωy = solver.x[2n_ux+1:3n_uy]
+uγy = solver.x[3n_uy+1:4n_uy]
+pω  = solver.x[4n_uy+1:end]
+
+# Discrete volume interface contribution : ∫_{Γ} μ ∇u dS ⋅ ex
+Int_Shear_x = operator_ux.H' * operator_ux.Wꜝ * operator_ux.G * uωx +
+               operator_ux.H' * operator_ux.Wꜝ * operator_ux.H * uγx
+
+# Discrete volume interface contribution : ∫_{Γ} μ ∇u dS ⋅ ey
+Int_Shear_y = operator_uy.H' * operator_uy.Wꜝ * operator_uy.G * uωy +
+               operator_uy.H' * operator_uy.Wꜝ * operator_uy.H * uγy
+
+# Discrete volume interface contribution : ∫_{Γ} μ ∇u^T dS ⋅ ex
+Int_Shear_x_T = operator_uy.H' * operator_uy.Wꜝ * operator_uy.G * uωx +
+                 operator_uy.H' * operator_uy.Wꜝ * operator_uy.H * uγx
+
+# Discrete volume interface contribution : ∫_{Γ} μ ∇u^T dS ⋅ ey
+Int_Shear_y_T = operator_ux.H' * operator_ux.Wꜝ * operator_ux.G * uωy +
+                 operator_ux.H' * operator_ux.Wꜝ * operator_ux.H * uγy
+
+# Discrete volume interface contribution : ∫_{Γ} -p n dS
+Int_Pressure = -operator_p.H' * (operator_p.G + operator_p.H) * pω
+
+Γ_x = diag(capacity_ux.Γ)
+Γ_y = diag(capacity_uy.Γ)
+Γ_p = diag(capacity_p.Γ)
+
+# Already integrated over the interface length
+shear_x_nds = Int_Shear_x
+shear_x_T_nds = Int_Shear_x_T
+shear_y_nds = Int_Shear_y
+shear_y_T_nds = Int_Shear_y_T
+pressure_nds = Int_Pressure
+
+
+diameter = 2 * circle_radius
+
+force_diag = compute_navierstokes_force_diagnostics(solver)
+body_force = navierstokes_reaction_force_components(force_diag; acting_on=:body)
+pressure_body = -force_diag.integrated_pressure
+viscous_body = -force_diag.integrated_viscous
+coeffs = drag_lift_coefficients(force_diag; ρ=ρ, U_ref=Umax, length_ref=diameter, acting_on=:body)
+println("Integrated forces on the cylinder (body reaction):")
+println("  Fx = $(round(body_force[1]; sigdigits=6)) (pressure=$(round(pressure_body[1]; sigdigits=6)), viscous=$(round(viscous_body[1]; sigdigits=6)))")
+println("  Fy = $(round(body_force[2]; sigdigits=6)) (pressure=$(round(pressure_body[2]; sigdigits=6)), viscous=$(round(viscous_body[2]; sigdigits=6)))")
+println("  Drag coefficient Cd = $(round(coeffs.Cd; sigdigits=6)), lift coefficient Cl = $(round(coeffs.Cl; sigdigits=6))")
+
+pressure_trace = pressure_trace_on_cut(solver; center=circle_center)
+
