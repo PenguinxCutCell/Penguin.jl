@@ -17,7 +17,7 @@ using Roots
 # Problem definition
 # ------------------------------------------------------------
 nx = 32
-lx = 1.0
+lx = 1.0 + 1/nx  # Extend domain slightly to avoid boundary issues
 x0 = 0.0
 mesh = Penguin.Mesh((nx,), (lx,), (x0,))
 x_offset = mesh.nodes[1][1] - x0
@@ -50,6 +50,17 @@ function initial_temperature(x)
     return (exp(-β * (x - 1.0)) - 1.0) / (exp(β) - 1.0)
 end
 
+# plot initial profile for verification
+x_fine = range(x0, x0 + lx, length=200)
+u_initial = initial_temperature.(x_fine)
+fig_init = Figure(resolution=(800, 500), fontsize=14)
+ax_init = Axis(fig_init[1, 1], xlabel="Position (x)", ylabel="Temperature",
+    title="Initial Temperature Profile for Favier Test Case")
+lines!(ax_init, x_fine, u_initial, color=:blue, linewidth=3, label="Initial Profile")
+hlines!(ax_init, T_m, color=:red, linewidth=2, linestyle=:dash, label="Melting Temperature T_m")
+axislegend(ax_init, position=:rt, framevisible=true, backgroundcolor=(:white, 0.7))
+display(fig_init)
+
 # Steady state profile (expected at t → ∞)
 steady_state_temperature(x) = 1.0 - x
 steady_state_interface = 4.0/5.0
@@ -72,7 +83,7 @@ phase2 = Phase(capacity_c, operator_c, f2, K2)
 
 # Boundary and interface conditions
 bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:top => Dirichlet(T_top), :bottom => Dirichlet(T_bottom)))
-ic = InterfaceConditions(ScalarJump(1.0, 0.0, T_m), FluxJump(1.0, 1.0, ρ * Lh))
+ic = InterfaceConditions(ScalarJump(1.0, 1.0, T_m), FluxJump(1.0, 1.0, ρ * Lh))
 
 # Initial condition from specified profile
 x_phys = mesh.nodes[1] .- x_offset

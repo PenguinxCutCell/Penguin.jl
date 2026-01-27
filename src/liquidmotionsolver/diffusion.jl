@@ -747,7 +747,7 @@ function A_diph_unstead_diff_moving_stef(operator1::DiffusionOps, operator2::Dif
 
     A1 = [block1 block2 spzeros(size(block2)) spzeros(size(block2))]
 
-    A2 = [spzeros(size(block1)) Iₐ1 spzeros(size(block2)) -Iₐ2]
+    A2 = [spzeros(size(block1)) Iₐ1 spzeros(size(block2)) spzeros(size(block2))]
 
 
     A3 = [spzeros(size(block1)) spzeros(size(block2)) block3 block4]
