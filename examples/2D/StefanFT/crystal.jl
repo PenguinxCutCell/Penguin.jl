@@ -176,7 +176,7 @@ display(fig_init)
 
 
 # Newton parameters
-Newton_params = (5, 1e-6, 1e-6, 1.0) # max_iter, tol, reltol, α
+Newton_params = (1, 1e-6, 1e-6, 1.0) # max_iter, tol, reltol, α
 
 # Run the simulation
 solver = StefanMono2D(Fluide, bc_b, bc, Δt, u0, mesh, "BE")
