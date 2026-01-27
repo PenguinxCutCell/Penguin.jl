@@ -273,6 +273,7 @@ function stokes2D_moving_blocks(fluid::Fluid{2},
             cap_ux=caps_u[1], cap_uy=caps_u[2], cap_p,
             visc_x_ω, visc_x_γ, visc_y_ω, visc_y_γ,
             grad_x, grad_y,
+            Gp_x=G_p_full_x, Hp_x=H_p_full_x, Gp_y=G_p_full_y, Hp_y=H_p_full_y,
             div_x_ω, div_x_γ, div_y_ω, div_y_γ,
             tie_x=I(nu_x), tie_y=I(nu_y),
             mass_x, mass_y,
@@ -569,10 +570,14 @@ function compute_navierstokes_force_diagnostics(s::MovingStokesUnsteadyMono{N}, 
     grads = Vector{SparseMatrixCSC{Float64,Int}}(undef, N)
     ops = Vector{DiffusionOps}(undef, N)
     caps = Vector{Capacity}(undef, N)
+    Gp_components = Vector{SparseMatrixCSC{Float64,Int}}(undef, N)
+    Hp_components = Vector{SparseMatrixCSC{Float64,Int}}(undef, N)
     if N == 1
         grads[1] = data.grad_x
         ops[1] = data.op_ux
         caps[1] = data.cap_ux
+        Gp_components[1] = data.Gp_x
+        Hp_components[1] = data.Hp_x
     elseif N == 2
         grads[1] = data.grad_x
         grads[2] = data.grad_y
@@ -580,6 +585,10 @@ function compute_navierstokes_force_diagnostics(s::MovingStokesUnsteadyMono{N}, 
         ops[2] = data.op_uy
         caps[1] = data.cap_ux
         caps[2] = data.cap_uy
+        Gp_components[1] = data.Gp_x
+        Hp_components[1] = data.Hp_x
+        Gp_components[2] = data.Gp_y
+        Hp_components[2] = data.Hp_y
     elseif N == 3
         grads[1] = data.grad_x
         grads[2] = data.grad_y
@@ -590,6 +599,12 @@ function compute_navierstokes_force_diagnostics(s::MovingStokesUnsteadyMono{N}, 
         caps[1] = data.cap_ux
         caps[2] = data.cap_uy
         caps[3] = data.cap_uz
+        Gp_components[1] = data.Gp_x
+        Hp_components[1] = data.Hp_x
+        Gp_components[2] = data.Gp_y
+        Hp_components[2] = data.Hp_y
+        Gp_components[3] = data.Gp_z
+        Hp_components[3] = data.Hp_z
     end
 
     g_p = Vector{Vector{Float64}}(undef, N)
@@ -609,15 +624,22 @@ function compute_navierstokes_force_diagnostics(s::MovingStokesUnsteadyMono{N}, 
         uγ = Vector{Float64}(view(s.x, offset + nu + 1:offset + 2nu))
         offset += 2nu
 
-        grad = grads[α]
-        gp_vec = -Vector{Float64}(grad * pω)
-        pressure_vec = -gp_vec
-
         op = ops[α]
         cap = caps[α]
+        
+        # Interface-integrated pressure force: ∫_Γ -p·n dS for component α
+        # Following the nusselt_profile pattern: H' * Wꜝ * G * field
+        Gp_α = Gp_components[α]
+        Hp_α = Hp_components[α]
+        # Extract the spatial part (t^{n+1} slice) from the operators
+        W = op.Wꜝ[1:end÷2, 1:end÷2]
+        pressure_vec = Vector{Float64}(-Hp_α' * W * Gp_α * pω)
+
+        grad = grads[α]
+        gp_vec = -Vector{Float64}(grad * pω)
+        
         G = op.G[1:end÷2, 1:end÷2]
         H = op.H[1:end÷2, 1:end÷2]
-        W = op.Wꜝ[1:end÷2, 1:end÷2]
         Iμ = build_I_D(op, s.fluid.μ, cap)
         Iμ = Iμ[1:end÷2, 1:end÷2]
 

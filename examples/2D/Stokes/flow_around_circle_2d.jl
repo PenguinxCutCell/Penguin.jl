@@ -165,7 +165,10 @@ Int_Shear_y_T = operator_ux.H' * operator_ux.Wꜝ * operator_ux.G * uωy +
                  operator_ux.H' * operator_ux.Wꜝ * operator_ux.H * uγy
 
 # Discrete volume interface contribution : ∫_{Γ} -p n dS
-Int_Pressure = -operator_p.H' * (operator_p.G + operator_p.H) * pω
+# Pressure has no interface DOF (no pγ), only pω
+# Following nusselt_profile pattern: H' * Wꜝ * G * field
+Int_Pressure_x = -operator_ux.H' * operator_ux.Wꜝ * operator_p.G[1:n_ux, :] * pω
+Int_Pressure_y = -operator_uy.H' * operator_uy.Wꜝ * operator_p.G[n_ux+1:n_ux+n_uy, :] * pω
 
 Γ_x = diag(capacity_ux.Γ)
 Γ_y = diag(capacity_uy.Γ)
@@ -176,7 +179,8 @@ shear_x_nds = Int_Shear_x
 shear_x_T_nds = Int_Shear_x_T
 shear_y_nds = Int_Shear_y
 shear_y_T_nds = Int_Shear_y_T
-pressure_nds = Int_Pressure
+pressure_x_nds = Int_Pressure_x
+pressure_y_nds = Int_Pressure_y
 
 
 diameter = 2 * circle_radius

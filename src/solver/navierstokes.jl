@@ -3691,6 +3691,15 @@ function compute_navierstokes_force_diagnostics(s::NavierStokesMono)
     integrated_viscous = zeros(Float64, N)
     integrated_force = zeros(Float64, N)
 
+    # Compute row ranges for each velocity component in the pressure gradient
+    row_ranges = Vector{UnitRange{Int}}(undef, N)
+    row_offset = 0
+    for α in 1:N
+        nu = nu_components[α]
+        row_ranges[α] = row_offset + 1:row_offset + nu
+        row_offset += nu
+    end
+
     offset = 0
     for α in 1:N
         nu = nu_components[α]
@@ -3698,11 +3707,17 @@ function compute_navierstokes_force_diagnostics(s::NavierStokesMono)
         uγ = Vector{Float64}(view(s.x, offset + nu + 1:offset + 2nu))
         offset += 2nu
 
+        op = s.fluid.operator_u[α]
+        
+        # Interface-integrated pressure force: ∫_Γ -p·n dS for component α
+        # Following the nusselt_profile pattern: H' * Wꜝ * G * field
+        op_p = s.fluid.operator_p
+        Gp_α = op_p.G[row_ranges[α], :]
+        Hp_α = op_p.H[row_ranges[α], :]
+        pressure_vec = Vector{Float64}(-Hp_α' * op.Wꜝ * Gp_α * pω)
+
         grad = grads[α]
         gp_vec = -Vector{Float64}(grad * pω)
-        pressure_vec = -gp_vec
-
-        op = s.fluid.operator_u[α]
         G_u = Vector{Float64}(op.G * uω)
         if size(op.H, 2) == 0
             H_u = zeros(Float64, size(op.G, 1))
