@@ -18,7 +18,7 @@ analytical_position(t, k, lambda) = 2 * lambda * sqrt(t)
 
 # Mesh and initial geometry
 nx = 32
-lx = 1.0
+lx = 1.0  
 x0 = 0.0
 mesh = Penguin.Mesh((nx,), (lx,), (x0,))
 x_offset = mesh.nodes[1][1] - x0  # mesh nodes start at x0 + Δx/2
@@ -62,8 +62,8 @@ println("Solving the Stefan problem with 1D least-squares interface update...")
 solver, residuals, xf_log, timestep_history = solve_StefanMono1D!(
     solver, phase, xf0, Δt, Tstart, Tend, bc_b, bc_i, stef_cond, mesh, "BE";
     method=Base.:\,
-    Newton_params=(2, eps(), eps(), 1.0),
-    fd_eps=1e-4,
+    Newton_params=(10, eps(), eps(), 1.0),
+    fd_eps=1e-6,
     step_max=Δx
 )
 println("Simulation complete!")

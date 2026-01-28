@@ -107,6 +107,7 @@ function solve_StefanMono1D!(s::Solver, phase::Phase, xf::Float64, Δt::Float64,
 
         converged = false
         current_xf = xf_prev
+        T_prev = Tᵢ
 
         for iter in 1:max_iter
             # Geometry for this trial interface (linear in time on the slab)
@@ -119,13 +120,13 @@ function solve_StefanMono1D!(s::Solver, phase::Phase, xf::Float64, Δt::Float64,
             phase_current = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
 
             s.A = A_mono_unstead_diff_moving(phase_current.operator, phase_current.capacity, phase_current.Diffusion_coeff, bc, scheme)
-            s.b = b_mono_unstead_diff_moving(phase_current.operator, phase_current.capacity, phase_current.Diffusion_coeff, phase_current.source, bc, Tᵢ, Δt, tn, scheme)
+            s.b = b_mono_unstead_diff_moving(phase_current.operator, phase_current.capacity, phase_current.Diffusion_coeff, phase_current.source, bc, T_prev, Δt, tn, scheme)
             BC_border_mono!(s.A, s.b, bc_b, mesh; t=tn1)
 
             solve_system!(s; method=method, algorithm=algorithm, kwargs...)
-            Tᵢ = s.x
+            T_trial = s.x
 
-            res_vec, _, _, _ = stefan_residual_vector_1d(phase_current, Tᵢ, ic, scheme)
+            res_vec, _, _, _ = stefan_residual_vector_1d(phase_current, T_trial, ic, scheme)
             err = norm(res_vec, Inf)
             push!(get!(residuals, step_id, Float64[]), err)
 
@@ -143,7 +144,7 @@ function solve_StefanMono1D!(s::Solver, phase::Phase, xf::Float64, Δt::Float64,
             capacity_fd = Capacity(body_fd, STmesh)
             operator_fd = DiffusionOps(capacity_fd)
             phase_fd = Phase(capacity_fd, operator_fd, phase.source, phase.Diffusion_coeff)
-            res_fd, _, _, _ = stefan_residual_vector_1d(phase_fd, Tᵢ, ic, scheme)
+            res_fd, _, _, _ = stefan_residual_vector_1d(phase_fd, T_trial, ic, scheme)
 
             denom_shift = trial_fd - current_xf
             J = denom_shift != 0.0 ? (res_fd .- res_vec) ./ denom_shift : zero(res_vec)
@@ -164,10 +165,10 @@ function solve_StefanMono1D!(s::Solver, phase::Phase, xf::Float64, Δt::Float64,
 
         t += Δt
         push!(timestep_history, (t, Δt))
+        Tᵢ = s.x
         push!(s.states, Tᵢ)
         step_id += 1
     end
 
     return s, residuals, xf_log, timestep_history
 end
-

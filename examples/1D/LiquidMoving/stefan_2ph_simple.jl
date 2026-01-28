@@ -86,10 +86,10 @@ u0ᵧ2 = fill(T_m, nx + 1)
 u0 = vcat(u0ₒ1, u0ᵧ1, u0ₒ2, u0ᵧ2)
 
 # Solver setup
-solver = MovingLiquidDiffusionUnsteadyDiph(phase1, phase2, bc_b, ic, Δt, u0, mesh, "CN")
+solver = MovingLiquidDiffusionUnsteadyDiph(phase1, phase2, bc_b, ic, Δt, u0, mesh, "BE")
 println("Solving two-phase Stefan problem (1D, symmetric) with analytical comparison...")
 solver, residuals, xf_log = solve_MovingLiquidDiffusionUnsteadyDiph!(
-    solver, phase1, phase2, xf0, Δt, Tstart, Tend, bc_b, ic, mesh, "CN";
+    solver, phase1, phase2, xf0, Δt, Tstart, Tend, bc_b, ic, mesh, "BE";
     Newton_params=(1, 1e-10, 1e-10, 1.0),
     method=Base.:\,
     adaptive_timestep=false,

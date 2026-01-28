@@ -34,7 +34,7 @@ end
 
 ### 1D Test Case : One-phase Stefan Problem
 # Define the spatial mesh
-nx = 32
+nx = 64
 lx = 1.
 x0 = 0.
 domain = ((x0, lx),)
@@ -86,7 +86,7 @@ u0ᵧ = zeros((nx+1))
 u0 = vcat(u0ₒ, u0ᵧ)
 
 # Newton parameters
-max_iter = 2
+max_iter = 3
 tol = eps()
 reltol = eps()
 α = 1.0

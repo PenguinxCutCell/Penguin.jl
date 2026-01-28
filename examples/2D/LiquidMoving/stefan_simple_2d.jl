@@ -35,7 +35,7 @@ end
 
 ### 2D Test Case : One-phase Stefan Problem with Height Function
 # Define the spatial mesh
-nx, ny = 16, 16
+nx, ny = 32, 32
 lx, ly = 1.0, 1.0
 x0, y0 = 0.0, 0.0
 domain = ((x0, lx), (y0, ly))
@@ -46,8 +46,8 @@ x_offset = mesh.nodes[1][1][1] - x0
 
 # Define the Space-Time mesh
 Δt = 0.5*(lx/nx)^2  # Time step based on stability condition
-Tstart = 0.001
-Tend = 0.01
+Tstart = 0.01
+Tend = 0.05
 STmesh = Penguin.SpaceTimeMesh(mesh, [Tstart, Tstart+Δt], tag=mesh.tag)
 
 # Calculate Stefan number and λ and set initial interface consistently with Tstart
@@ -117,7 +117,7 @@ u0ᵧ = zeros((nx+1)*(ny+1))
 u0 = vcat(u0ₒ, u0ᵧ)
 
 # Newton parameters
-max_iter = 2
+max_iter = 3
 tol = eps()
 reltol = eps()
 α = 1.0

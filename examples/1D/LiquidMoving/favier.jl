@@ -16,7 +16,7 @@ using Roots
 # ------------------------------------------------------------
 # Problem definition
 # ------------------------------------------------------------
-nx = 32
+nx = 4
 lx = 1.0 + 1/nx  # Extend domain slightly to avoid boundary issues
 x0 = 0.0
 mesh = Penguin.Mesh((nx,), (lx,), (x0,))
@@ -25,7 +25,7 @@ x_offset = mesh.nodes[1][1] - x0
 
 Δt = 0.5 * Δx^2
 Tstart = 0.0
-Tend = 1.0
+Tend = 2.0
 STmesh = Penguin.SpaceTimeMesh(mesh, [Tstart, Tstart + Δt], tag=mesh.tag)
 
 # Material/thermal parameters
