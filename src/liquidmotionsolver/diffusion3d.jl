@@ -92,6 +92,9 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
     current_xf = Interface_position
     new_xf = copy(current_xf)
     xf = copy(current_xf)
+    T_prev = s.x
+    T_prev === nothing && error("Initial temperature state is not set (s.x is nothing). Set s.x before solving.")
+    Tᵢ = T_prev
     
     # First time step : Newton to compute the interface position xf1
     while (iter < max_iter) && (err > tol) && (err_rel > reltol)
@@ -99,7 +102,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
 
         # 1) Solve the linear system
         solve_system!(s; method=method, algorithm=algorithm, kwargs...)
-        Tᵢ = s.x
+        T_trial = s.x
 
         # 2) Recompute heights
         Hₙ, Hₙ₊₁ = extract_height_profiles(phase.capacity, dims)
@@ -111,7 +114,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
         V  = phase.operator.V[1:end÷2, 1:end÷2]
         Id = build_I_D(phase.operator, phase.Diffusion_coeff, phase.capacity)
         Id = Id[1:end÷2, 1:end÷2]
-        Tₒ, Tᵧ = Tᵢ[1:end÷2], Tᵢ[end÷2+1:end]
+        Tₒ, Tᵧ = T_trial[1:end÷2], T_trial[end÷2+1:end]
         Interface_term = Id * H' * W! * G * Tₒ + Id * H' * W! * H * Tᵧ
 
         # Reshape to 3D spatial array and sum along x-direction (dim 1)
@@ -181,7 +184,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
 
         # 9) Rebuild the matrix A and the vector b
         s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc, scheme)
-        s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, Δt, t, scheme)
+        s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc, T_prev, Δt, t, scheme)
 
         BC_border_mono!(s.A, s.b, bc_b, mesh; t=tₙ₊₁)
 
@@ -289,6 +292,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
         current_xf = copy(new_xf)
         new_xf = copy(current_xf)
         xf = copy(current_xf)
+        T_prev = Tᵢ
 
         # Newton to compute the interface position xf1
         while (iter < max_iter) && (err > tol) && (err_rel > reltol)
@@ -296,7 +300,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
 
             # 1) Solve the linear system
             solve_system!(s; method=method, algorithm=algorithm, kwargs...)
-            Tᵢ = s.x
+            T_trial = s.x
 
             # 2) Recompute heights
             Hₙ, Hₙ₊₁ = extract_height_profiles(phase.capacity, dims)
@@ -308,7 +312,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
             V  = phase.operator.V[1:end÷2, 1:end÷2]
             Id = build_I_D(phase.operator, phase.Diffusion_coeff, phase.capacity)
             Id = Id[1:end÷2, 1:end÷2]
-            Tₒ, Tᵧ = Tᵢ[1:end÷2], Tᵢ[end÷2+1:end]
+            Tₒ, Tᵧ = T_trial[1:end÷2], T_trial[end÷2+1:end]
             Interface_term = Id * H' * W! * G * Tₒ + Id * H' * W! * H * Tᵧ
 
             # Reshape to 3D spatial array and sum along x-direction
@@ -373,7 +377,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
 
             # 9) Rebuild the matrix A and the vector b
             s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc, scheme)
-            s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, Δt, 0.0, scheme)
+            s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc, T_prev, Δt, 0.0, scheme)
 
             BC_border_mono!(s.A, s.b, bc_b, mesh; t=tₙ₊₁)
 
@@ -394,6 +398,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono3D!(s::Solver, phase::Phase, Int
             println("Time step info: Δt = $(round(Δt, digits=6)), CFL = $(round(cfl_current, digits=3))")
         end
 
+        Tᵢ = s.x
         push!(s.states, s.x)
         println("Time : $(t)")
         println("Max value : $(maximum(abs.(s.x)))")

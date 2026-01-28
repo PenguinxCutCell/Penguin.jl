@@ -537,6 +537,7 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
         displacements = zeros(n_markers)
         residual_norm_history = Float64[]
         position_increment_history = Float64[]
+        T_prev = Tᵢ
         
         # Variables pour Levenberg-Marquardt
         lambda = lm_init_lambda
@@ -546,7 +547,7 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
         for iter in 1:max_iter
             # 1. Solve temperature field with current interface position
             solve_system!(s; method=method, algorithm=algorithm, kwargs...)
-            Tᵢ = s.x
+            T_trial = s.x
             
             # Get capacity matrices
             V_matrices = phase.capacity.A[cap_index]
@@ -564,7 +565,7 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
             Id = build_I_D(phase.operator, phase.Diffusion_coeff, phase.capacity)
             Id = Id[1:end÷2, 1:end÷2]  # Adjust for 2D case
             
-            Tₒ, Tᵧ = Tᵢ[1:end÷2], Tᵢ[end÷2+1:end]
+            Tₒ, Tᵧ = T_trial[1:end÷2], T_trial[end÷2+1:end]
             interface_flux = Id * H' * W! * G * Tₒ + Id * H' * W! * H * Tᵧ
             
             # Reshape to get flux per cell - IMPORTANT: use the same reshape consistently
@@ -1068,7 +1069,7 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
             
             # 8. Update space-time mesh and capacity
             STmesh = Penguin.SpaceTimeMesh(mesh, time_interval, tag=mesh.tag)
-            capacity = Capacity(body, STmesh; compute_centroids=false)
+            capacity = Capacity(body, STmesh;  method="VOFI", integration_method=:vofijul, compute_centroids=false)
             operator = DiffusionOps(capacity)
             phase_updated = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
             
@@ -1077,7 +1078,7 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
                                             phase_updated.Diffusion_coeff, bc, scheme)
             s.b = b_mono_unstead_diff_moving(phase_updated.operator, phase_updated.capacity, 
                                             phase_updated.Diffusion_coeff, phase_updated.source, 
-                                            bc, Tᵢ, Δt, tₙ, scheme)
+                                            bc, T_prev, Δt, tₙ, scheme)
             
             BC_border_mono!(s.A, s.b, bc_b, mesh; t=tₙ₊₁)
             
@@ -1085,7 +1086,7 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
             phase = phase_updated
 
             body_2d = (x, y, _=0) -> body(x, y, tₙ₊₁)
-            capacity_2d = Capacity(body_2d, mesh; compute_centroids=false)
+            capacity_2d = Capacity(body_2d, mesh;  method="VOFI", integration_method=:vofijul, compute_centroids=false)
             operator_2d = DiffusionOps(capacity_2d)
             phase_2d = Phase(capacity_2d, operator_2d, phase.source, phase.Diffusion_coeff)
         end
@@ -1117,6 +1118,7 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
         xf_log[timestep+1] = new_markers
         
         # Store solution
+        Tᵢ = s.x
         push!(s.states, s.x)
         
         println("Time: $(round(t, digits=6))")
@@ -1130,6 +1132,34 @@ function solve_StefanMono2D!(s::Solver, phase::Phase, front::FrontTracker, Δt::
     end
     
     return s, residuals, xf_log, timestep_history, phase_2d, position_increments
+end
+
+"""
+Wrapper around `solve_StefanMono2D!` for unclosed interfaces (e.g. planar fronts).
+Ensures the provided `FrontTracker` is marked as open and accepts an `adaptive_timestep`
+keyword (currently unused) for compatibility with example scripts.
+"""
+function solve_StefanMono2Dunclosed!(s::Solver, phase::Phase, front::FrontTracker, Δt::Float64, Tₛ::Float64, Tₑ::Float64,
+                                     bc_b::BorderConditions, bc::AbstractBoundary, ic::InterfaceConditions,
+                                     mesh::Penguin.Mesh{2}, scheme::String;
+                                     adaptive_timestep::Bool=false,
+                                     kwargs...)
+    # Force the interface to be treated as unclosed and drop duplicated closing marker if present
+    markers = get_markers(front)
+    if front.is_closed || (length(markers) > 1 && markers[1] == markers[end])
+        markers = copy(markers)
+        if length(markers) > 1 && markers[1] == markers[end]
+            pop!(markers)
+        end
+        set_markers!(front, markers, false)
+        println("solve_StefanMono2Dunclosed!: converted provided front to an open interface with $(length(markers)) markers")
+    end
+
+    if adaptive_timestep
+        println("solve_StefanMono2Dunclosed!: adaptive_timestep is not implemented; proceeding with fixed Δt = $Δt")
+    end
+
+    return solve_StefanMono2D!(s, phase, front, Δt, Tₛ, Tₑ, bc_b, bc, ic, mesh, scheme; kwargs...)
 end
 
 function solve_StefanMono2D_geom!(s::Solver, phase::Phase, front::FrontTracker, Δt::Float64, Tₛ::Float64, Tₑ::Float64,
@@ -1218,10 +1248,11 @@ function solve_StefanMono2D_geom!(s::Solver, phase::Phase, front::FrontTracker, 
         displacements = zeros(n_markers)
         residual_norm_history = Float64[]
         position_increment_history = Float64[]
+        T_prev = Tᵢ
 
         for iter in 1:max_iter
             solve_system!(s; method=method, algorithm=algorithm, kwargs...)
-            Tᵢ = s.x
+            T_trial = s.x
 
             V_matrices = phase.capacity.A[cap_index]
             Vₙ₊₁_matrix = V_matrices[1:end÷2, 1:end÷2]
@@ -1235,7 +1266,7 @@ function solve_StefanMono2D_geom!(s::Solver, phase::Phase, front::FrontTracker, 
             Id = build_I_D(phase.operator, phase.Diffusion_coeff, phase.capacity)
             Id = Id[1:end÷2, 1:end÷2]
 
-            Tₒ, Tᵧ = Tᵢ[1:end÷2], Tᵢ[end÷2+1:end]
+            Tₒ, Tᵧ = T_trial[1:end÷2], T_trial[end÷2+1:end]
             interface_flux = Id * H' * W! * G * Tₒ + Id * H' * W! * H * Tᵧ
             interface_flux_2d = reshape(interface_flux, (nx, ny))
 
@@ -1350,7 +1381,7 @@ function solve_StefanMono2D_geom!(s::Solver, phase::Phase, front::FrontTracker, 
                                             phase_updated.Diffusion_coeff, bc, scheme)
             s.b = b_mono_unstead_diff_moving(phase_updated.operator, phase_updated.capacity,
                                             phase_updated.Diffusion_coeff, phase_updated.source,
-                                            bc, Tᵢ, Δt, tₙ, scheme)
+                                            bc, T_prev, Δt, tₙ, scheme)
 
             BC_border_mono!(s.A, s.b, bc_b, mesh; t=tₙ₊₁)
 
@@ -1385,6 +1416,7 @@ function solve_StefanMono2D_geom!(s::Solver, phase::Phase, front::FrontTracker, 
 
         set_markers!(front, new_markers)
         xf_log[timestep+1] = new_markers
+        Tᵢ = s.x
         push!(s.states, s.x)
 
         println("Time: $(round(t, digits=6))")
@@ -1526,19 +1558,20 @@ function solve_StefanDiph2D!(s::Solver, phase1::Phase, phase2::Phase,
         displacements = zeros(n_markers)
         residual_norm_history = Float64[]
         position_increment_history = Float64[]
+        T_prev = Tᵢ
 
         # Gauss-Newton iterations
         for iter in 1:max_iter
             # 1. Solve temperature field with current interface position
             solve_system!(s; method=method, algorithm=algorithm, kwargs...)
-            Tᵢ = s.x
+            T_trial = s.x
             
             # Separate solution components for each phase
-            n_dof = length(Tᵢ) ÷ 4
-            T1_bulk = Tᵢ[1:n_dof]                    # Phase 1 bulk
-            T1_interface = Tᵢ[n_dof+1:2*n_dof]       # Phase 1 interface
-            T2_bulk = Tᵢ[2*n_dof+1:3*n_dof]          # Phase 2 bulk
-            T2_interface = Tᵢ[3*n_dof+1:end]         # Phase 2 interface
+            n_dof = length(T_trial) ÷ 4
+            T1_bulk = T_trial[1:n_dof]                    # Phase 1 bulk
+            T1_interface = T_trial[n_dof+1:2*n_dof]       # Phase 1 interface
+            T2_bulk = T_trial[2*n_dof+1:3*n_dof]          # Phase 2 bulk
+            T2_interface = T_trial[3*n_dof+1:end]         # Phase 2 interface
             
             # Get capacity matrices for Phase 1
             V1_matrices = phase1.capacity.A[cap_index]
@@ -1799,7 +1832,7 @@ function solve_StefanDiph2D!(s::Solver, phase1::Phase, phase2::Phase,
                                             phase1_updated.capacity, phase2_updated.capacity,
                                             phase1_updated.Diffusion_coeff, phase2_updated.Diffusion_coeff,
                                             phase1_updated.source, phase2_updated.source,
-                                            interface_cond, Tᵢ, Δt, tₙ, scheme)
+                                            interface_cond, T_prev, Δt, tₙ, scheme)
             
             BC_border_diph!(s.A, s.b, bc_b, mesh)
             
@@ -1829,6 +1862,7 @@ function solve_StefanDiph2D!(s::Solver, phase1::Phase, phase2::Phase,
         xf_log[timestep+1] = get_markers(front)
         
         # Store solution
+        Tᵢ = s.x
         push!(s.states, s.x)
         
         # Print radius info for a circle

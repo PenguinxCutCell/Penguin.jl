@@ -5,6 +5,7 @@ using SparseArrays
 using CairoMakie
 using Statistics
 using SpecialFunctions
+using FrontCutTracking
 
 ### Problème de Stefan avec interface plane
 ### Solidification avec une interface plane se déplaçant dans la direction x
@@ -103,6 +104,7 @@ function create_vertical_line!(front, x_pos, y_min, y_max, n_points)
 end
 
 # Créer la ligne verticale
+set_domain!(front, x0_domain, x0_domain+lx, y0_domain, y0_domain+ly; fluid_side=:left)  # fluid on the left of the interface
 create_vertical_line!(front, interface_x, y0_domain, y0_domain+ly, nmarkers)
 
 # Définir la position initiale du front sous forme de SDF
@@ -154,7 +156,7 @@ for i in 1:nx+1
         idx = i + (j - 1) * (nx + 1)
         x = mesh.nodes[1][i]
         y = mesh.nodes[2][j]
-        #u0ₒ[idx] = analytical_temperature(x, t_init)
+        u0ₒ[idx] = analytical_temperature(x, t_init)
     end
 end
 u0ᵧ = ones((nx+1)*(ny+1))*TM  # Température à l'interface

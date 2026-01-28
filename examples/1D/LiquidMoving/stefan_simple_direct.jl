@@ -32,7 +32,7 @@ function analytical_position(t, k, lambda)
 end
 
 
-### 1D Test Case : One-phase Stefan Problem
+### 1D Test Case : One-phase Stefan Problem (Simplified Direct Method)
 # Define the spatial mesh
 nx = 64
 lx = 1.
@@ -44,8 +44,8 @@ x_offset = mesh.nodes[1][1] - x0
 
 # Define the Space-Time mesh
 Δt = 0.5*(lx/nx)^2  # Time step based on stability condition
-Tstart = 0.03
-Tend = 0.1
+Tstart = 0.1
+Tend = 0.2
 STmesh = Penguin.SpaceTimeMesh(mesh, [Tstart, Tstart+Δt], tag=mesh.tag)
 
 # Calculate Stefan number and λ and set initial interface consistently with Tstart
@@ -63,7 +63,7 @@ capacity = Capacity(body, STmesh)
 operator = DiffusionOps(capacity)
 
 # Define the boundary conditions
-bc = Dirichlet((x,t,_=0) -> 0.0)
+bc = Dirichlet(0.0)
 bc1 = Dirichlet(0.0)
 
 bc_b = BorderConditions(Dict{Symbol, AbstractBoundary}(:top => Dirichlet(0.0), :bottom => Dirichlet(1.0)))
@@ -85,21 +85,14 @@ u0ₒ = analytical_temperature.(x_nodes_phys, Tstart, 1.0, 1.0, lambda)
 u0ᵧ = zeros((nx+1))
 u0 = vcat(u0ₒ, u0ᵧ)
 
-# Newton parameters
-max_iter = 3
-tol = eps()
-reltol = eps()
-α = 1.0
-Newton_params = (max_iter, tol, reltol, α)
-
 # Define the solver
 solver = MovingLiquidDiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, u0, mesh, "BE")
 
-# Solve the problem
-println("Solving the Stefan problem...")
-solver, residuals, xf_log, timestep_history = solve_MovingLiquidDiffusionUnsteadyMono!(
+# Solve the problem using the SIMPLIFIED FIXED-POINT METHOD
+println("Solving the Stefan problem with simplified fixed-point method...")
+solver, xf_log = solve_MovingLiquidDiffusionUnsteadyMono_Simple!(
     solver, Fluide, xf, Δt, Tstart, Tend, bc_b, bc, stef_cond, mesh, "BE"; 
-    Newton_params=Newton_params, adaptive_timestep=false, method=Base.:\
+    method=Base.:\, max_inner_iter=1, tol=1e-8
 )
 println("Simulation complete!")
 
@@ -114,7 +107,7 @@ function plot_temperature_comparison(
     x_num,
     t_final::Float64,
     xf_final::Float64;
-    save_path::String="temperature_comparison.png"
+    save_path::String="temperature_comparison_direct.png"
 )
     # Create fine grid for analytical solution
     x_analytical = range(minimum(x_num), maximum(x_num), 2000)
@@ -127,7 +120,7 @@ function plot_temperature_comparison(
         fig[1, 1],
         xlabel = "Position (x)",
         ylabel = "Temperature",
-        title = "Stefan Problem: Temperature Comparison at t = $t_final"
+        title = "Stefan Problem (Direct Method): Temperature Comparison at t = $t_final"
     )
     
     # Plot solutions
@@ -160,7 +153,7 @@ function plot_interface_position(
     times_numerical;
     lambda=1.0,
     vertical_offset=0.0,
-    save_path::String="interface_position.png"
+    save_path::String="interface_position_direct.png"
 )
     # Analytical curve from 0 -> max time
     t_analytical = range(0.0, maximum(times_numerical), 500)
@@ -172,7 +165,7 @@ function plot_interface_position(
         fig[1, 1],
         xlabel = "Time (t)",
         ylabel = "Interface Position (x_f)",
-        title = "Stefan Problem: Interface Position vs Time"
+        title = "Stefan Problem (Direct Method): Interface Position vs Time"
     )
     
     # Plot solutions
@@ -189,9 +182,6 @@ function plot_interface_position(
     if !isempty(save_path)
         save(save_path, fig, px_per_unit=4)
     end
-
-    #xlims!(ax, 0.01-4Δt, maximum(times_numerical)+4Δt)
-    #ylims!(ax, 0.10, 0.13)
     
     display(fig)
     return fig
@@ -201,7 +191,7 @@ end
 # Execute the plots
 println("Plotting temperature comparison...")
 Δt_eff = (Tend - Tstart) / length(xf_log)  # effective step from actually performed steps
-times = Tstart .+ collect(1:length(xf_log)) .* Δt_eff  # xf_log stores positions at the end of each step
+times = Tstart .+ collect(1:length(xf_log)) .* Δt  # xf_log stores positions at the end of each step
 # Convert from mesh coordinates to physical coordinates
 # Remove ONLY the constant mesh offset (Δx/2), not any numerical error offset
 xf_log_phys = xf_log .- x_offset
@@ -220,7 +210,7 @@ plot_interface_position(
     xf_log_phys,
     times,
     lambda=lambda,
-    vertical_offset= 0.0
+    vertical_offset=0.0
 )
 
 # Final interface position (numerical and analytical at Tend)
@@ -232,9 +222,6 @@ println("Final interface position: numerical=", xf_num, ", analytical=", xf_anal
 println("Absolute position error=", abs_pos_err, ", Relative error=", rel_pos_err)
 
 # Compute L1 error for temperature at final time but only for points below final interface
-body_tend = (x, _=0) -> (x - xf_log[end])  # Use the last interface position
-capacity_tend = Capacity(body_tend, mesh)
-
 u_num = solver.x[1:(nx+1)]
 x_num = x_num_phys
 mask = x_num .<= xf_num
@@ -260,10 +247,12 @@ else
 end 
 
 # Summary errors
-println("Summary of Errors at t=$(Tend):")
+println("\n=== Summary of Errors at t=$(Tend) (DIRECT METHOD) ===")
 println("Final interface position relative error: ", rel_pos_err)
-println("L1 temperature error (x <= xf_num): ", sum(abs.(u_num_below .- u_anal_below)) / length(u_num_below))
-println("L2 temperature error (x <= xf_num): ", sqrt(sum((u_num_below .- u_anal_below).^2) / length(u_num_below)))
-println("  Nodes used: $(length(u_num_below)) / $(length(u_num))")
+if sum(mask) > 0
+    println("L1 temperature error (x <= xf_num): ", sum(abs.(u_num_below .- u_anal_below)) / length(u_num_below))
+    println("L2 temperature error (x <= xf_num): ", sqrt(sum((u_num_below .- u_anal_below).^2) / length(u_num_below)))
+    println("  Nodes used: $(length(u_num_below)) / $(length(u_num))")
+end
 
-println("Done!")
+println("\nDone!")

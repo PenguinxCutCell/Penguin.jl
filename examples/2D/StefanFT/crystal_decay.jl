@@ -90,15 +90,14 @@ create_crystal!(front, 0.0, 0.0, R0, 4, 0.1, nmarkers)
 body = (x, y, t, _=0) -> -sdf(front, float(x), float(y))
 
 # Define the Space-Time mesh
-#Δt = 0.5*(lx / nx)^2  # Time step size
-Δt = 0.01
-t_final = t_init + 10Δt
+Δt = 0.5*(lx / nx)^2  # Time step size
+t_final = t_init + 15Δt
 println("Final radius at t=$(t_init + Δt): R=$(interface_position(t_init + Δt))")
 
 STmesh = Penguin.SpaceTimeMesh(mesh, [t_init, t_init + Δt], tag=mesh.tag)
 
 # Define the capacity
-capacity = Capacity(body, STmesh; method="ImplicitIntegration", compute_centroids=true) 
+capacity = Capacity(body, STmesh; method="VOFI", compute_centroids=false) 
 
 # Define the diffusion operator
 operator = DiffusionOps(capacity)
@@ -128,13 +127,8 @@ u0ₒ = zeros((nx+1)*(ny+1))
 # Create a smooth initial temperature field using normalized tanh
 # Change now ImplicitIntegration work with body(x,y,z,t) and not body(x)
 body_init = (x,y,_=0) -> sdf(front, x, y)
-body_init = (x) -> begin
-    # Handle interval arithmetic by converting to floats
-    x1 = typeof(x[1]) <: IntervalArithmetic.Interval ? mid(x[1]) : float(x[1])
-    x2 = typeof(x[2]) <: IntervalArithmetic.Interval ? mid(x[2]) : float(x[2])
-    return sdf(front, x1, x2)
-end
-cap_init = Capacity(body_init, mesh; method="ImplicitIntegration", compute_centroids=true)
+
+cap_init = Capacity(body_init, mesh; method="VOFI", compute_centroids=false)
 centroids = cap_init.C_ω
 
 # Initialize the temperature with properly scaled tanh profile
@@ -143,7 +137,7 @@ for idx in 1:length(centroids)
     x, y = centroid[1], centroid[2]
     
     # Distance signée (négative à l'intérieur, positive à l'extérieur)
-    val = body_init([x, y])
+    val = body_init(x, y)
     
     if val <= 0
         # À l'intérieur ou sur l'interface: température = TM
@@ -182,7 +176,7 @@ display(fig_init)
 
 
 # Newton parameters
-Newton_params = (5, 1e-6, 1e-6, 1.0) # max_iter, tol, reltol, α
+Newton_params = (1, 1e-6, 1e-6, 1.0) # max_iter, tol, reltol, α
 
 # Run the simulation
 solver = StefanMono2D(Fluide, bc_b, bc, Δt, u0, mesh, "BE")
