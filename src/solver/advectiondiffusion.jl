@@ -259,6 +259,10 @@ function solve_AdvectionDiffusionUnsteadyMono!(s::Solver, phase::Phase, Δt::Flo
         error("Solver is not initialized. Call a solver constructor first.")
     end
 
+    # Guard against floating point drift and adjust the last step to land on Tₑ
+    tol = eps(Float64) * max(1.0, abs(Tₑ))
+    current_dt = Δt
+
     # Solve for the initial time step
     t = 0.0
     println("Time: ", t)
@@ -267,11 +271,18 @@ function solve_AdvectionDiffusionUnsteadyMono!(s::Solver, phase::Phase, Δt::Flo
     push!(s.states, s.x)
     println("Solver Extremum: ", maximum(abs.(s.x)))
 
-    while t < Tₑ
-        t += Δt
+    while t + tol < Tₑ
+        step_dt = min(Δt, Tₑ - t)
+
+        if step_dt != current_dt
+            s.A = A_mono_unstead_advdiff(phase.operator, phase.capacity, phase.Diffusion_coeff, bc, step_dt, scheme)
+            current_dt = step_dt
+        end
+
+        t += step_dt
         println("Time: ", t)
-        s.A = A_mono_unstead_advdiff(phase.operator, phase.capacity, phase.Diffusion_coeff, bc, Δt, scheme)
-        s.b = b_mono_unstead_advdiff(phase.operator, phase.source, phase.capacity, phase.Diffusion_coeff, bc, s.x, Δt, t, scheme)
+        s.A = A_mono_unstead_advdiff(phase.operator, phase.capacity, phase.Diffusion_coeff, bc, step_dt, scheme)
+        s.b = b_mono_unstead_advdiff(phase.operator, phase.source, phase.capacity, phase.Diffusion_coeff, bc, s.x, step_dt, t, scheme)
         BC_border_mono!(s.A, s.b, bc_b, phase.capacity.mesh; t=t)
         
         solve_system!(s; method, algorithm=algorithm, kwargs...)
@@ -394,6 +405,10 @@ function solve_AdvectionDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phase2:
         error("Solver is not initialized. Call a solver constructor first.")
     end
 
+    # Guard against floating point drift and adjust the last step to land on Tₑ
+    tol = eps(Float64) * max(1.0, abs(Tₑ))
+    current_dt = Δt
+
     # Solve for the initial time step
     t = 0.0
     println("Time: ", t)
@@ -404,12 +419,19 @@ function solve_AdvectionDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phase2:
     println("Solver Extremum: ", maximum(abs.(s.x)))
 
     # Loop over the time steps
-    while t < Tₑ
-        t += Δt
+    while t + tol < Tₑ
+        step_dt = min(Δt, Tₑ - t)
+
+        if step_dt != current_dt
+            s.A = A_diph_unstead_advdiff(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, step_dt, scheme)
+            current_dt = step_dt
+        end
+
+        t += step_dt
         println("Time: ", t)
 
-        s.A = A_diph_unstead_advdiff(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, Δt, scheme)
-        s.b = b_diph_unstead_advdiff(phase1.operator, phase2.operator, phase1.source, phase2.source, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, Tᵢ, Δt, t, scheme)
+        s.A = A_diph_unstead_advdiff(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, step_dt, scheme)
+        s.b = b_diph_unstead_advdiff(phase1.operator, phase2.operator, phase1.source, phase2.source, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, Tᵢ, step_dt, t, scheme)
         BC_border_diph!(s.A, s.b, bc_b, phase1.capacity, phase2.capacity)
         
         solve_system!(s; method, algorithm=algorithm, kwargs...)
