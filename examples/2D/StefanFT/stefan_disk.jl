@@ -69,7 +69,7 @@ radii = [interface_position(t) for t in range(t_init, stop=t_final, length=100)]
 temperatures = [analytical_temperature(r, t_final) for r in radii]
 
 # Define the spatial mesh
-nx, ny = 32, 32
+nx, ny = 64, 64
 lx, ly = 16.0, 16.0
 x0, y0 = -8.0, -8.0
 Δx, Δy = lx/(nx), ly/(ny)
@@ -86,8 +86,8 @@ create_circle!(front, 0.01, 0.01, interface_position(t_init), nmarkers)
 body = (x, y, t, _=0) -> -sdf(front, x, y)
 
 # Define the Space-Time mesh
-Δt = 0.15*(lx / nx)^2  # Time step size
-t_final = t_init + 10Δt
+Δt = 0.5*(lx / nx)^2  # Time step size
+t_final = 1.375
 println("Final radius at t=$(t_init + Δt): R=$(interface_position(t_init + Δt))")
 
 STmesh = Penguin.SpaceTimeMesh(mesh, [t_init, t_init + Δt], tag=mesh.tag)
@@ -149,7 +149,7 @@ display(fig_init)
 
 
 # Newton parameters
-Newton_params = (30, 1e-6, 1e-6, 1.0) # max_iter, tol, reltol, α
+Newton_params = (3, eps(), eps(), 1.0) # max_iter, tol, reltol, α
 
 # Run the simulation
 solver = StefanMono2D(Fluide, bc_b, bc, Δt, u0, mesh, "BE")

@@ -87,6 +87,7 @@ include("liquidmotionsolver/height_tracking.jl")
 
 include("liquidmotionsolver/diffusion.jl")
 export MovingLiquidDiffusionUnsteadyMono, solve_MovingLiquidDiffusionUnsteadyMono!
+export solve_MovingLiquidDiffusionUnsteadyMono_Simple!
 export solve_MovingLiquidDiffusionUnsteadyMono_coupledNewton!
 export MovingLiquidDiffusionUnsteadyDiph, solve_MovingLiquidDiffusionUnsteadyDiph!
 
@@ -100,6 +101,9 @@ export MovingLiquidDiffusionUnsteadyDiph2D, solve_MovingLiquidDiffusionUnsteadyD
 include("liquidmotionsolver/diffusion3d.jl")
 export solve_MovingLiquidDiffusionUnsteadyMono3D!
 export bilinear_interpolation_3d, ensure_periodic_3d!
+
+include("liquidmotionsolver/stefan1d.jl")
+export StefanMono1D, solve_StefanMono1D!
 
 include("liquidmotionsolver/stefan.jl")
 export StefanMono2D, solve_StefanMono2D!

@@ -247,12 +247,13 @@ function solve_StefanMono3D!(s::Solver, phase::Phase, front, Δt::Float64, Tₛ:
         displacements = zeros(n_markers)
         residual_norm_history = Float64[]
         position_increment_history = Float64[]
+        T_prev = Tᵢ
 
         # Newton iterations
         for iter in 1:max_iter
             # 1. Solve temperature field with current interface position
             solve_system!(s; method=method, algorithm=algorithm, kwargs...)
-            Tᵢ = s.x
+            T_trial = s.x
             
             # Get capacity matrices
             V_matrices = phase.capacity.A[cap_index]
@@ -270,7 +271,7 @@ function solve_StefanMono3D!(s::Solver, phase::Phase, front, Δt::Float64, Tₛ:
             Id = build_I_D(phase.operator, phase.Diffusion_coeff, phase.capacity)
             Id = Id[1:end÷2, 1:end÷2]
             
-            Tₒ, Tᵧ = Tᵢ[1:end÷2], Tᵢ[end÷2+1:end]
+            Tₒ, Tᵧ = T_trial[1:end÷2], T_trial[end÷2+1:end]
             interface_flux = Id * H' * W! * G * Tₒ + Id * H' * W! * H * Tᵧ
             
             # Reshape to get flux per cell
@@ -420,7 +421,7 @@ function solve_StefanMono3D!(s::Solver, phase::Phase, front, Δt::Float64, Tₛ:
                                             phase_updated.Diffusion_coeff, bc, scheme)
             s.b = b_mono_unstead_diff_moving(phase_updated.operator, phase_updated.capacity, 
                                             phase_updated.Diffusion_coeff, phase_updated.source, 
-                                            bc, Tᵢ, Δt, tₙ, scheme)
+                                            bc, T_prev, Δt, tₙ, scheme)
             
             BC_border_mono!(s.A, s.b, bc_b, mesh; t=tₙ₊₁)
             
@@ -455,6 +456,7 @@ function solve_StefanMono3D!(s::Solver, phase::Phase, front, Δt::Float64, Tₛ:
         xf_log[timestep+1] = new_markers
         
         # Store solution
+        Tᵢ = s.x
         push!(s.states, s.x)
         
         println("Time: $(round(t, digits=6))")
