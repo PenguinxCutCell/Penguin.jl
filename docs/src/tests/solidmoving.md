@@ -47,7 +47,7 @@ K = (x,y,z)-> 1.0
 Fluide = Phase(capacity, operator, f, K)
 
 # 7) Setup and Solve
-solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, u0, mesh, "BE")
+solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, 0.0 u0, mesh, "BE")
 solve_MovingDiffusionUnsteadyMono!(solver, Fluide, body, Δt, Tend, bc_b, bc, mesh, "BE"; method=Base.:\)
 
 # 8) Plot or Animate Results

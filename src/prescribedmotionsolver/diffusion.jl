@@ -1,6 +1,6 @@
 # Moving - Diffusion - Unsteady - Monophasic
 """
-    MovingDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary, Δt::Float64, Tᵢ::Vector{Float64}, scheme::String)
+    MovingDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary, Δt::Float64, Tₛ::Float, Tᵢ::Vector{Float64}, scheme::String)
 
 Create a solver for the unsteady monophasic diffusion problem inside a moving body.
 
@@ -9,10 +9,11 @@ Create a solver for the unsteady monophasic diffusion problem inside a moving bo
 - `bc_b::BorderConditions`: The border conditions.
 - `bc_i::AbstractBoundary`: The interface conditions.
 - `Δt::Float64`: The time step.
+- `Tₛ::Float`: The start time.
 - `Tᵢ::Vector{Float64}`: The initial temperature field.
 - `scheme::String`: The time integration scheme. Either "CN" or "BE".
 """
-function MovingDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary, Δt::Float64, Tᵢ::Vector{Float64}, mesh::AbstractMesh, scheme::String)
+function MovingDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary, Δt::Float64, Tₛ::Float64, Tᵢ::Vector{Float64}, mesh::AbstractMesh, scheme::String)
     println("Solver Creation:")
     println("- Moving problem")
     println("- Monophasic problem")
@@ -20,15 +21,12 @@ function MovingDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i:
     println("- Diffusion problem")
     
     s = Solver(Unsteady, Monophasic, Diffusion, nothing, nothing, nothing, [], [])
-    
-    if scheme == "CN"
-        s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i, "CN")
-        s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc_i, Tᵢ, Δt, 0.0, "CN")
-    else # BE
-        s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i, "BE")
-        s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc_i, Tᵢ, Δt, 0.0, "BE")
-    end
-    BC_border_mono!(s.A, s.b, bc_b, mesh; t=0.0)
+
+    s.x = copy(Tᵢ)
+    s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i, scheme)
+    s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc_i, Tᵢ, Δt, Tₛ, scheme)
+
+    BC_border_mono!(s.A, s.b, bc_b, mesh; t=Tₛ + Δt)
     return s
 end
 
@@ -236,27 +234,30 @@ function solve_MovingDiffusionUnsteadyMono!(s::Solver, phase::Phase, body::Funct
     println("- Unsteady problem")
     println("- Diffusion problem")
 
-    # Solve system for the initial condition
-    t=Tₛ
+    # Store the initial condition at the start time
+    t = Tₛ
+    s.x === nothing && error("Initial condition is not set. Initialize solver with the initial state.")
+    push!(s.states, copy(s.x))
     println("Time : $(t)")
-    solve_system!(s; method, algorithm=algorithm, kwargs...)
-
-    push!(s.states, s.x)
     println("Solver Extremum : ", maximum(abs.(s.x)))
     Tᵢ = s.x
     
+    # Guard against floating point drift when stepping to the final time
+    tol = eps(Float64) * max(1.0, abs(Tₑ))
+
     # Time loop
-    while t < Tₑ
-        t += Δt
-        println("Time : $(t)")
-        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t+Δt], tag=mesh.tag)
+    while t + tol < Tₑ
+        step_dt = min(Δt, Tₑ - t)
+        t_next = t + step_dt
+        println("Time : $(t_next)")
+        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t_next], tag=mesh.tag)
         capacity = Capacity(body, STmesh; method=geometry_method, kwargs...)
         operator = DiffusionOps(capacity)
 
         s.A = A_mono_unstead_diff_moving(operator, capacity, phase.Diffusion_coeff, bc, scheme)
-        s.b = b_mono_unstead_diff_moving(operator, capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, Δt, t, scheme)
+        s.b = b_mono_unstead_diff_moving(operator, capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, step_dt, t, scheme)
 
-        BC_border_mono!(s.A, s.b, bc_b, mesh; t=t) 
+        BC_border_mono!(s.A, s.b, bc_b, mesh; t=t_next) 
 
         # Solve system
         solve_system!(s; method, algorithm=algorithm, kwargs...)
@@ -264,6 +265,7 @@ function solve_MovingDiffusionUnsteadyMono!(s::Solver, phase::Phase, body::Funct
         push!(s.states, s.x)
         println("Solver Extremum : ", maximum(abs.(s.x)))
         Tᵢ = s.x
+        t = t_next
     end
 
 end
@@ -279,12 +281,11 @@ function solve_MovingDiffusionUnsteadyMono_cfl!(s::Solver, phase::Phase, body::F
     println("- Unsteady problem")
     println("- Diffusion problem")
 
-    # Solve system for the initial condition
-    t=Tₛ
+    # Store the initial condition at the start time
+    t = Tₛ
+    s.x === nothing && error("Initial condition is not set. Initialize solver with the initial state.")
+    push!(s.states, copy(s.x))
     println("Time : $(t)")
-    solve_system!(s; method, algorithm=algorithm, kwargs...)
-
-    push!(s.states, s.x)
     println("Solver Extremum : ", maximum(abs.(s.x)))
     Tᵢ = s.x
 
@@ -304,29 +305,27 @@ function solve_MovingDiffusionUnsteadyMono_cfl!(s::Solver, phase::Phase, body::F
     end
 
     Δt_prev = Δt
+    # Guard against floating point drift when stepping to the final time
+    tol = eps(Float64) * max(1.0, abs(Tₑ))
     # Time loop
-    while t < Tₑ
-        t += Δt_prev
-        if t >= Tₑ
-            break
-        end
-
+    while t + tol < Tₑ
         v_abs = interface_speed(interface_velocity, t)
         if v_abs < 1e-12
             Δt_step = min(Δt_prev, Tₑ - t)
         else
             Δt_step = min(cfl * Δh_min / v_abs, Tₑ - t)
         end
+        t_next = t + Δt_step
 
-        println("Time : $(t)")
-        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t+Δt_step], tag=mesh.tag)
+        println("Time : $(t_next)")
+        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t_next], tag=mesh.tag)
         capacity = Capacity(body, STmesh; method=geometry_method, kwargs...)
         operator = DiffusionOps(capacity)
 
         s.A = A_mono_unstead_diff_moving(operator, capacity, phase.Diffusion_coeff, bc, scheme)
         s.b = b_mono_unstead_diff_moving(operator, capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, Δt_step, t, scheme)
 
-        BC_border_mono!(s.A, s.b, bc_b, mesh; t=t)
+        BC_border_mono!(s.A, s.b, bc_b, mesh; t=t_next)
 
         # Solve system
         solve_system!(s; method, algorithm=algorithm, kwargs...)
@@ -334,6 +333,7 @@ function solve_MovingDiffusionUnsteadyMono_cfl!(s::Solver, phase::Phase, body::F
         push!(s.states, s.x)
         println("Solver Extremum : ", maximum(abs.(s.x)))
         Tᵢ = s.x
+        t = t_next
         Δt_prev = Δt_step
     end
 
@@ -349,6 +349,8 @@ function MovingDiffusionUnsteadyDiph(phase1::Phase, phase2::Phase, bc_b::BorderC
     println("- Diffusion problem")
     
     s = Solver(Unsteady, Diphasic, Diffusion, nothing, nothing, nothing, [], [])
+
+    s.x = copy(Tᵢ)
     
     if scheme == "CN"
         s.A = A_diph_unstead_diff_moving(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, "CN")
@@ -584,27 +586,30 @@ function solve_MovingDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phase2::Ph
     println("- Unsteady problem")
     println("- Diffusion problem")
 
-    # Solve system for the initial condition
-    t=0.0
+    # Store the initial condition at the start time
+    t = 0.0
+    s.x === nothing && error("Initial condition is not set. Initialize solver with the initial state.")
+    push!(s.states, copy(s.x))
     println("Time : $(t)")
-    solve_system!(s; method, algorithm=algorithm, kwargs...)
-
-    push!(s.states, s.x)
     println("Solver Extremum : ", maximum(abs.(s.x)))
     Tᵢ = s.x
 
+    # Guard against floating point drift when stepping to the final time
+    tol = eps(Float64) * max(1.0, abs(Tₑ))
+
     # Time loop
-    while t < Tₑ
-        t += Δt
-        println("Time : $(t)")
-        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t+Δt], tag=mesh.tag)
+    while t + tol < Tₑ
+        step_dt = min(Δt, Tₑ - t)
+        t_next = t + step_dt
+        println("Time : $(t_next)")
+        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t_next], tag=mesh.tag)
         capacity1 = Capacity(body, STmesh)
         capacity2 = Capacity(body_c, STmesh)
         operator1 = DiffusionOps(capacity1)
         operator2 = DiffusionOps(capacity2)
 
         s.A = A_diph_unstead_diff_moving(operator1, operator2, capacity1, capacity2, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, scheme)
-        s.b = b_diph_unstead_diff_moving(operator1, operator2, capacity1, capacity2, phase1.Diffusion_coeff, phase2.Diffusion_coeff, phase1.source, phase2.source, ic, Tᵢ, Δt, t, scheme)
+        s.b = b_diph_unstead_diff_moving(operator1, operator2, capacity1, capacity2, phase1.Diffusion_coeff, phase2.Diffusion_coeff, phase1.source, phase2.source, ic, Tᵢ, step_dt, t, scheme)
 
         BC_border_diph!(s.A, s.b, bc_b, mesh)
 
@@ -614,6 +619,7 @@ function solve_MovingDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phase2::Ph
         push!(s.states, s.x)
         println("Solver Extremum : ", maximum(abs.(s.x)))
         Tᵢ = s.x
+        t = t_next
 
     end
 end

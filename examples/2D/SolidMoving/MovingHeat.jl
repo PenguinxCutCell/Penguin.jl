@@ -71,7 +71,7 @@ u0ᵧ = ones((nx+1)*(ny+1))*Tm
 u0 = vcat(u0ₒ, u0ᵧ)
 
 # Define the solver
-solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, bc1, Δt, u0, mesh, "BE")
+solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, bc1, Δt, Tstart, u0, mesh, "BE")
 
 # Solve the problem
 solve_MovingDiffusionUnsteadyMono!(solver, Fluide, body, Δt, Tstart, Tend, bc_b, bc1, mesh, "BE"; method=Base.:\,  geometry_method="VOFI", integration_method=:vofijul, compute_centroids=false)

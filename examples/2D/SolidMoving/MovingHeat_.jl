@@ -5,7 +5,7 @@ using CairoMakie
 
 ### 2D Test Case: Monophasic Unsteady Diffusion Equation inside an oscillating Disk with Manufactured Solution
 # Define the mesh - larger domain to accommodate oscillation
-nx, ny = 64, 64
+nx, ny = 32, 32
 lx, ly = 4.0, 4.0  
 x0, y0 = 0.0, 0.0
 domain = ((x0, lx), (y0, ly))
@@ -18,7 +18,7 @@ period = 1.0         # oscillation period T
 x_0 = lx/2           # center x-position (fixed)
 y_0 = ly/2           # center y-position (fixed)
 ν = 1.0              # damping parameter for analytical solution
-D = 0.1              # diffusion coefficient
+D = 1.0              # diffusion coefficient
 
 # Define the oscillating body as a level set function
 function oscillating_body(x, y, t)
@@ -74,10 +74,10 @@ function source_term(x, y, z, t)
 end
 
 # Define the Space-Time mesh
-Δt = 0.00001
-Tstart = 0.01  # Start at small positive time to avoid t=0 singularity
+Δt = 0.5*(lx/nx)^2   # Time step based on stability criterion
+Tstart = Δt  # Start at small positive time to avoid t=0 singularity
 Tend = 0.1
-STmesh = Penguin.SpaceTimeMesh(mesh, [0.0, Δt], tag=mesh.tag)
+STmesh = Penguin.SpaceTimeMesh(mesh, [Tstart, Tstart+Δt], tag=mesh.tag)
 
 # Define the capacity
 capacity = Capacity(oscillating_body, STmesh; compute_centroids=true, method="VOFI", integration_method=:vofijul)
@@ -129,7 +129,7 @@ end
 u0 = vcat(u0ₒ, u0ᵧ)
 
 # Define the solver
-solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, robin_bc, Δt, u0, mesh, "BE")
+solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, robin_bc, Δt, Tstart, u0, mesh, "BE")
 
 # Solve the problem
 solve_MovingDiffusionUnsteadyMono!(solver, Fluide, oscillating_body, Δt, Tstart, Tend, bc_b, robin_bc, mesh, "BE"; method=Base.:\, geometry_method="VOFI", integration_method=:vofijul)
@@ -137,7 +137,7 @@ solve_MovingDiffusionUnsteadyMono!(solver, Fluide, oscillating_body, Δt, Tstart
 # Check errors based on last body 
 body_tend = (x, y,_=0) ->  begin
     # Calculate oscillating radius at Tend
-    R_t = radius_mean + radius_amp * sin(2π * Tend / period)
+    R_t = radius_mean + radius_amp * sin(2π * (Tend) / period)
     return sqrt((x - x_0)^2 + (y - y_0)^2) - R_t
 end
 capacity_tend = Capacity(body_tend, mesh; compute_centroids=false)

@@ -94,7 +94,7 @@ T0ᵧ2 = zeros((nx+1)*(ny+1))
 T0 = vcat(T0ₒ1, T0ᵧ1, T0ₒ2, T0ᵧ2)
 
 # Define the solver
-solver = MovingAdvDiffusionUnsteadyDiph(Fluide_1, Fluide_2, bc_b, ic, Δt, T0, mesh, "BE")
+solver = MovingAdvDiffusionUnsteadyDiph(Fluide_1, Fluide_2, bc_b, ic, Δt, Tstart, T0, mesh, "BE")
 
 # Solve the problem
 solve_MovingAdvDiffusionUnsteadyDiph!(solver, Fluide_1, Fluide_2, translating_body, translating_body_c, Δt, Tstart, Tend, bc_b, ic, mesh, "BE", uₒ, uᵧ; method=Base.:\)

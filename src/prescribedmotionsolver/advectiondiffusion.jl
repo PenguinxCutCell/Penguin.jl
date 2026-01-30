@@ -12,7 +12,7 @@ Create a solver for the unsteady monophasic advection-diffusion problem inside a
 - `Tᵢ::Vector{Float64}`: The initial temperature field.
 - `scheme::String`: The time integration scheme. Either "CN" or "BE".
 """
-function MovingAdvDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary, Δt::Float64, Tᵢ::Vector{Float64}, mesh::AbstractMesh, scheme::String)
+function MovingAdvDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary, Δt::Float64, Tₛ::Float64, Tᵢ::Vector{Float64}, mesh::AbstractMesh, scheme::String)
     println("Solver Creation:")
     println("- Moving problem")
     println("- Monophasic problem")
@@ -20,15 +20,13 @@ function MovingAdvDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc
     println("- Advection-Diffusion problem")
     
     s = Solver(Unsteady, Monophasic, DiffusionAdvection, nothing, nothing, nothing, [], [])
-    
-    if scheme == "CN"
-        s.A = A_mono_unstead_advdiff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i, "CN")
-        s.b = b_mono_unstead_advdiff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc_i, Tᵢ, Δt, 0.0, "CN")
-    else # BE
-        s.A = A_mono_unstead_advdiff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i, "BE")
-        s.b = b_mono_unstead_advdiff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc_i, Tᵢ, Δt, 0.0, "BE")
-    end
-    BC_border_mono!(s.A, s.b, bc_b, mesh; t=0.0)
+
+    s.x = copy(Tᵢ)
+
+    s.A = A_mono_unstead_advdiff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i, scheme)
+    s.b = b_mono_unstead_advdiff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc_i, Tᵢ, Δt, Tₛ, scheme)
+
+    BC_border_mono!(s.A, s.b, bc_b, mesh; t=Tₛ + Δt)
     return s
 end
 
@@ -211,28 +209,31 @@ function solve_MovingAdvDiffusionUnsteadyMono!(s::Solver, phase::Phase, body::Fu
 
     capacity_states = Vector{AbstractCapacity}()
 
-    # Solve system for the initial condition
-    t=Tₛ
-    println("Time : $(t)")
-    solve_system!(s; method, algorithm=algorithm, kwargs...)
-
-    push!(s.states, s.x)
+    # Store the initial condition at the start time
+    t = Tₛ
+    s.x === nothing && error("Initial condition is not set. Initialize solver with the initial state.")
+    push!(s.states, copy(s.x))
     push!(capacity_states, phase.capacity)
+    println("Time : $(t)")
     println("Solver Extremum : ", maximum(abs.(s.x)))
     Tᵢ = s.x
     
+    # Guard against floating point drift when stepping to the final time
+    tol = eps(Float64) * max(1.0, abs(Tₑ))
+
     # Time loop
-    while t < Tₑ
-        t += Δt
-        println("Time : $(t)")
-        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t+Δt], tag=mesh.tag)
+    while t + tol < Tₑ
+        step_dt = min(Δt, Tₑ - t)
+        t_next = t + step_dt
+        println("Time : $(t_next)")
+        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t_next], tag=mesh.tag)
         capacity = Capacity(body, STmesh; compute_centroids=true)
         operator = ConvectionOps(capacity, uₒ, uᵧ)
 
         s.A = A_mono_unstead_advdiff_moving(operator, capacity, phase.Diffusion_coeff, bc, scheme)
-        s.b = b_mono_unstead_advdiff_moving(operator, capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, Δt, t, scheme)
+        s.b = b_mono_unstead_advdiff_moving(operator, capacity, phase.Diffusion_coeff, phase.source, bc, Tᵢ, step_dt, t, scheme)
 
-        BC_border_mono!(s.A, s.b, bc_b, mesh; t=t)
+        BC_border_mono!(s.A, s.b, bc_b, mesh; t=t_next)
 
         # Solve system
         solve_system!(s; method, algorithm=algorithm, kwargs...)
@@ -241,6 +242,7 @@ function solve_MovingAdvDiffusionUnsteadyMono!(s::Solver, phase::Phase, body::Fu
         push!(capacity_states, capacity)
         println("Solver Extremum : ", maximum(abs.(s.x)))
         Tᵢ = s.x
+        t = t_next
     end
 
     return capacity_states
@@ -248,7 +250,7 @@ end
 
 
 # Moving - Diffusion - Unsteady - Diphasic
-function MovingAdvDiffusionUnsteadyDiph(phase1::Phase, phase2::Phase, bc_b::BorderConditions, ic::InterfaceConditions, Δt::Float64, Tᵢ::Vector{Float64}, mesh::AbstractMesh, scheme::String)
+function MovingAdvDiffusionUnsteadyDiph(phase1::Phase, phase2::Phase, bc_b::BorderConditions, ic::InterfaceConditions, Δt::Float64, Tᵢ::Vector{Float64}, Tₛ::Float64, mesh::AbstractMesh, scheme::String)
     println("Solver Creation:")
     println("- Moving problem")
     println("- Diphasic problem")
@@ -256,14 +258,12 @@ function MovingAdvDiffusionUnsteadyDiph(phase1::Phase, phase2::Phase, bc_b::Bord
     println("- Advection-Diffusion problem")
     
     s = Solver(Unsteady, Diphasic, DiffusionAdvection, nothing, nothing, nothing, [], [])
+
+    s.x = copy(Tᵢ)
+
+    s.A = A_diph_unstead_advdiff_moving(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, scheme)
+    s.b = b_diph_unstead_advdiff_moving(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, phase1.source, phase2.source, ic, Tᵢ, Δt, Tₛ, scheme)
     
-    if scheme == "CN"
-        s.A = A_diph_unstead_advdiff_moving(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, "CN")
-        s.b = b_diph_unstead_advdiff_moving(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, phase1.source, phase2.source, ic, Tᵢ, Δt, 0.0, "CN")
-    else 
-        s.A = A_diph_unstead_advdiff_moving(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, "BE")
-        s.b = b_diph_unstead_advdiff_moving(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, phase1.source, phase2.source, ic, Tᵢ, Δt, 0.0, "BE")
-    end
     BC_border_diph!(s.A, s.b, bc_b, mesh)
     return s
 end
@@ -523,27 +523,30 @@ function solve_MovingAdvDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phase2:
     println("- Unsteady problem")
     println("- Diffusion problem")
 
-    # Solve system for the initial condition
-    t=Tₛ
+    # Store the initial condition at the start time
+    t = Tₛ
+    s.x === nothing && error("Initial condition is not set. Initialize solver with the initial state.")
+    push!(s.states, copy(s.x))
     println("Time : $(t)")
-    solve_system!(s; method, algorithm=algorithm, kwargs...)
-
-    push!(s.states, s.x)
     println("Solver Extremum : ", maximum(abs.(s.x)))
     Tᵢ = s.x
 
+    # Guard against floating point drift when stepping to the final time
+    tol = eps(Float64) * max(1.0, abs(Tₑ))
+
     # Time loop
-    while t < Tₑ
-        t += Δt
-        println("Time : $(t)")
-        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t+Δt], tag=mesh.tag)
+    while t + tol < Tₑ
+        step_dt = min(Δt, Tₑ - t)
+        t_next = t + step_dt
+        println("Time : $(t_next)")
+        STmesh = Penguin.SpaceTimeMesh(mesh, [t, t_next], tag=mesh.tag)
         capacity1 = Capacity(body, STmesh)
         capacity2 = Capacity(body_c, STmesh)
         operator1 = ConvectionOps(capacity1, uₒ, uᵧ)
         operator2 = ConvectionOps(capacity2, uₒ, uᵧ)
 
         s.A = A_diph_unstead_advdiff_moving(operator1, operator2, capacity1, capacity2, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, scheme)
-        s.b = b_diph_unstead_advdiff_moving(operator1, operator2, capacity1, capacity2, phase1.Diffusion_coeff, phase2.Diffusion_coeff, phase1.source, phase2.source, ic, Tᵢ, Δt, t, scheme)
+        s.b = b_diph_unstead_advdiff_moving(operator1, operator2, capacity1, capacity2, phase1.Diffusion_coeff, phase2.Diffusion_coeff, phase1.source, phase2.source, ic, Tᵢ, step_dt, t, scheme)
 
         BC_border_diph!(s.A, s.b, bc_b, mesh)
 
@@ -553,6 +556,7 @@ function solve_MovingAdvDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phase2:
         push!(s.states, s.x)
         println("Solver Extremum : ", maximum(abs.(s.x)))
         Tᵢ = s.x
+        t = t_next
 
     end
 end

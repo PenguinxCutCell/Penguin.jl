@@ -110,7 +110,7 @@ T0ᵧ = ones(npts)
 T0 = vcat(T0ₒ, T0ᵧ)
 
 # Define the solver
-solver = MovingAdvDiffusionUnsteadyMono(Fluide, bc_b, ic, Δt, T0, mesh, "BE")
+solver = MovingAdvDiffusionUnsteadyMono(Fluide, bc_b, ic, Δt, Tstart, T0, mesh, "BE")
 
 # Solve the problem
 capacity_states = solve_MovingAdvDiffusionUnsteadyMono!(solver, Fluide, translating_body, Δt, Tstart, Tend, bc_b, ic, mesh, "CN", uₒ, uᵧ; method=Base.:\)

@@ -51,7 +51,7 @@ u0ᵧ = zeros((nx+1))
 u0 = vcat(u0ₒ, u0ᵧ)
 
 # Define the solver
-solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, u0, mesh, "BE")
+solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, 0.0, u0, mesh, "BE")
 
 # Solve the problem
 solve_MovingDiffusionUnsteadyMono!(solver, Fluide, body, Δt, Tend, bc_b, bc, mesh, "BE"; method=Base.:\)

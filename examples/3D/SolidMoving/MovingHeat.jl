@@ -127,7 +127,7 @@ end
 u0 = vcat(u0ₒ, u0ᵧ)
 
 # Define the solver
-solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, robin_bc, Δt, u0, mesh, "BE")
+solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, robin_bc, Δt, Tstart, u0, mesh, "BE")
 
 # Solve the problem
 solve_MovingDiffusionUnsteadyMono!(solver, Fluide, oscillating_body, Δt, Tstart, Tend, bc_b, robin_bc, mesh, "BE"; method=Base.:\, geometry_method="VOFI", integration_method=:vofijul, compute_centroids=false)
@@ -401,7 +401,7 @@ function run_convergence_study(resolutions=[16, 32, 48])
         u0 = vcat(u0ₒ, u0ᵧ)
         
         # Create solver
-        solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, robin_bc, Δt, u0, mesh, "BE")
+        solver = MovingDiffusionUnsteadyMono(Fluide, bc_b, robin_bc, Δt, 0.0, u0, mesh, "BE")
         
         # Solve
         solve_MovingDiffusionUnsteadyMono!(solver, Fluide, oscillating_body, Δt, Tstart, Tend, bc_b, robin_bc, mesh, "BE"; method=Base.:\)
