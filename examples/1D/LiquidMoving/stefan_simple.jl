@@ -34,7 +34,7 @@ end
 
 ### 1D Test Case : One-phase Stefan Problem
 # Define the spatial mesh
-nx = 64
+nx = 32
 lx = 1.
 x0 = 0.
 domain = ((x0, lx),)
@@ -44,8 +44,8 @@ x_offset = mesh.nodes[1][1] - x0
 
 # Define the Space-Time mesh
 Δt = 0.5*(lx/nx)^2  # Time step based on stability condition
-Tstart = 0.03
-Tend = 0.1
+Tstart = 0.15
+Tend = 0.2
 STmesh = Penguin.SpaceTimeMesh(mesh, [Tstart, Tstart+Δt], tag=mesh.tag)
 
 # Calculate Stefan number and λ and set initial interface consistently with Tstart
@@ -80,7 +80,8 @@ Fluide = Phase(capacity, operator, f, K)
 # Initial condition
 # Initial condition: bulk initialized from analytical temperature at Tstart
 x_nodes = mesh.nodes[1]
-x_nodes_phys = x_nodes .- x_offset
+x_nodes_phys = x_nodes #.- 2x_offset
+centroids = [capacity.C_ω[i][1] for i in 1:length(capacity.C_ω)][1:div(length(capacity.C_ω),2)]
 u0ₒ = analytical_temperature.(x_nodes_phys, Tstart, 1.0, 1.0, lambda)
 u0ᵧ = zeros((nx+1))
 u0 = vcat(u0ₒ, u0ᵧ)
@@ -93,7 +94,7 @@ reltol = eps()
 Newton_params = (max_iter, tol, reltol, α)
 
 # Define the solver
-solver = MovingLiquidDiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, u0, mesh, "BE")
+solver = MovingLiquidDiffusionUnsteadyMono(Fluide, bc_b, bc, Δt, Tstart, u0, mesh, "BE")
 
 # Solve the problem
 println("Solving the Stefan problem...")
@@ -190,8 +191,8 @@ function plot_interface_position(
         save(save_path, fig, px_per_unit=4)
     end
 
-    #xlims!(ax, 0.01-4Δt, maximum(times_numerical)+4Δt)
-    #ylims!(ax, 0.10, 0.13)
+    #xlims!(ax, Tstart-Δt, Tend+Δt)
+    #ylims!(ax, maximum(xf_numerical)*0.9, maximum(xf_numerical)*1.1)
     
     display(fig)
     return fig

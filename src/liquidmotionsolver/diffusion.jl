@@ -136,7 +136,7 @@ function normalize_lr_options(options)
 end
 
 """
-    MovingLiquidDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary, Δt::Float64, Tᵢ::Vector{Float64}, mesh::AbstractMesh, scheme::String)
+    MovingLiquidDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary, Δt::Float64, Tₛ::Float64, Tᵢ::Vector{Float64}, mesh::AbstractMesh, scheme::String)
 
 Create a solver for the unsteady diffusion problem with moving interface in a monophasic problem.
 
@@ -145,11 +145,12 @@ Create a solver for the unsteady diffusion problem with moving interface in a mo
 - bc_b::BorderConditions: The border conditions.
 - bc_i::AbstractBoundary: The interface condition.
 - Δt::Float64: The time step.
+- Tₛ::Float64: The start time.
 - Tᵢ::Vector{Float64}: The initial temperature field.
 - mesh::AbstractMesh: The mesh.
 - scheme::String: The scheme to use for the time discretization ("BE" or "CN").
 """
-function MovingLiquidDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary, Δt::Float64, Tᵢ::Vector{Float64}, mesh::AbstractMesh, scheme::String)
+function MovingLiquidDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions, bc_i::AbstractBoundary, Δt::Float64, Tₛ::Float64, Tᵢ::Vector{Float64}, mesh::AbstractMesh, scheme::String)
     println("Solver Creation:")
     println("- Moving problem")
     println("- Non prescibed motion")
@@ -159,15 +160,11 @@ function MovingLiquidDiffusionUnsteadyMono(phase::Phase, bc_b::BorderConditions,
     
     s = Solver(Unsteady, Monophasic, Diffusion, nothing, nothing, nothing, [], [])
     s.x = copy(Tᵢ)
+
+    s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i, scheme)
+    s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc_i, Tᵢ, Δt, Tₛ, scheme)
     
-    if scheme == "CN"
-        s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i, "CN")
-        s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc_i, Tᵢ, Δt, 0.0, "CN")
-    else # BE
-        s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc_i, "BE")
-        s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc_i, Tᵢ, Δt, 0.0, "BE")
-    end
-    BC_border_mono!(s.A, s.b, bc_b, mesh; t=0.0)
+    BC_border_mono!(s.A, s.b, bc_b, mesh; t=Tₛ+Δt)
     return s
 end
 
@@ -191,6 +188,7 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
     # Solve system for the initial condition
     t=Tₛ
     println("Time : $(t)")
+    time_tol = eps(Float64) * max(1.0, abs(Tₑ))
 
     # Params
     ρL = ic.flux.value
@@ -234,6 +232,11 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
     T_prev = s.x
     T_prev === nothing && error("Initial temperature state is not set (s.x is nothing). Construct the solver with an initial Tᵢ or set s.x before solving.")
     Tᵢ = T_prev
+    step_dt = min(Δt, Tₑ - t)
+    if step_dt <= time_tol
+        return s, residuals, xf_log, timestep_history
+    end
+
     # First time step : Newton to compute the interface position xf1
     while (iter < max_iter) && (err > tol) && (err > reltol * abs(current_xf))
         iter += 1
@@ -287,18 +290,18 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
         end
 
         # Store tn+1 and tn
-        tn1 = t + Δt
+        tn1 = t + step_dt
         tn  = t
 
         # 4) Rebuild domain : # Add t interpolation : x - (xf*(tn1 - t)/(\Delta t) + xff*(t - tn)/(\Delta t))
-        body = (xx,tt, _=0)->(xx - (xf*(tn1 - tt)/Δt + new_xf*(tt - tn)/Δt))
+        body = (xx,tt, _=0)->(xx - (xf*(tn1 - tt)/step_dt + new_xf*(tt - tn)/step_dt))
         STmesh = SpaceTimeMesh(mesh, [tn, tn1], tag=mesh.tag)
         capacity = Capacity(body, STmesh)
         operator = DiffusionOps(capacity)
         phase = Phase(capacity, operator, phase.source, phase.Diffusion_coeff)
 
         s.A = A_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, bc, scheme)
-        s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc, T_prev, Δt, t, scheme)
+        s.b = b_mono_unstead_diff_moving(phase.operator, phase.capacity, phase.Diffusion_coeff, phase.source, bc, T_prev, step_dt, t, scheme)
 
         BC_border_mono!(s.A, s.b, bc_b, mesh; t=tn1)
 
@@ -314,13 +317,13 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
     
     Tᵢ = s.x
     push!(s.states, s.x)
-    t += Δt                        # advance to the time level of the computed state
+    t += step_dt                        # advance to the time level of the computed state
     println("Time : $(t)")
     println("Max value : $(maximum(abs.(s.x)))")
 
     # Time loop
     k=2
-    while t < Tₑ
+    while t + time_tol < Tₑ
         # Calcul de la vitesse d'interface à partir des flux
         W! = phase.operator.Wꜝ[1:end÷2, 1:end÷2]
         G  = phase.operator.G[1:end÷2, 1:end÷2]
@@ -344,6 +347,13 @@ function solve_MovingLiquidDiffusionUnsteadyMono!(s::Solver, phase::Phase, xf, �
             
             push!(timestep_history, (t, Δt))
             println("Adaptive timestep: Δt = $(round(Δt, digits=6)), CFL = $(round(cfl, digits=3))")
+        end
+        step_dt = min(Δt, Tₑ - t)
+        if step_dt != Δt
+            Δt = step_dt
+            if adaptive_timestep && !isempty(timestep_history)
+                timestep_history[end] = (t, Δt)
+            end
         end
 
         # 1) Reconstruct geometry for next step on the correct time slab
@@ -910,6 +920,7 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
     # Solve system for the initial condition
     t=Tₛ
     println("Time : $(t)")
+    time_tol = eps(Float64) * max(1.0, abs(Tₑ))
 
     # Params
     ρL = ic.flux.value
@@ -951,6 +962,10 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
     T_prev = s.x
     T_prev === nothing && error("Initial temperature state is not set (s.x is nothing). Construct the solver with an initial Tᵢ or set s.x before solving.")
     Tᵢ = T_prev
+    step_dt = min(Δt, Tₑ - t)
+    if step_dt <= time_tol
+        return s, residuals, xf_log
+    end
     # First time step : Newton to compute the interface position xf1
     while (iter < max_iter) && (err > tol) && (err > reltol * abs(current_xf))
         iter += 1
@@ -1021,12 +1036,12 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
         end
 
         # Store tn+1 and tn
-        tn1 = t + Δt
+        tn1 = t + step_dt
         tn  = t
 
         # 4) Rebuild domain : # Add t interpolation : x - (xf*(tn1 - t)/(\Delta t) + xff*(t - tn)/(\Delta t))
-        body = (xx,tt, _=0)->(xx - (xf*(tn1 - tt)/Δt + new_xf*(tt - tn)/Δt))
-        body_c = (xx,tt, _=0)->-(xx - (xf*(tn1 - tt)/Δt + new_xf*(tt - tn)/Δt))
+        body = (xx,tt, _=0)->(xx - (xf*(tn1 - tt)/step_dt + new_xf*(tt - tn)/step_dt))
+        body_c = (xx,tt, _=0)->-(xx - (xf*(tn1 - tt)/step_dt + new_xf*(tt - tn)/step_dt))
         STmesh = SpaceTimeMesh(mesh, [tn, tn1], tag=mesh.tag)
         capacity = Capacity(body, STmesh)
         capacity_c = Capacity(body_c, STmesh)
@@ -1036,7 +1051,7 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
         phase2 = Phase(capacity_c, operator_c, phase2.source, phase2.Diffusion_coeff)
 
         s.A = A_diph_unstead_diff_moving_stef(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, ic, scheme)
-        s.b = b_diph_unstead_diff_moving_stef(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, phase1.source, phase2.source, ic, T_prev, Δt, t, scheme)
+        s.b = b_diph_unstead_diff_moving_stef(phase1.operator, phase2.operator, phase1.capacity, phase2.capacity, phase1.Diffusion_coeff, phase2.Diffusion_coeff, phase1.source, phase2.source, ic, T_prev, step_dt, t, scheme)
 
         BC_border_diph!(s.A, s.b, bc_b, mesh)
 
@@ -1052,17 +1067,20 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
     
     Tᵢ = s.x
     push!(s.states, s.x)
-    println("Time : $(t[1])")
+    t += step_dt
+    println("Time : $(t)")
     println("Max value : $(maximum(abs.(s.x)))")
 
     # Time loop
     k=2
-    while t < Tₑ
-        t += Δt
-        println("Time : $(t)")
+    while t + time_tol < Tₑ
+        step_dt = min(Δt, Tₑ - t)
+        if step_dt != Δt
+            Δt = step_dt
+        end
 
         # 1) Reconstruct
-        STmesh = SpaceTimeMesh(mesh, [Δt, 2Δt], tag=mesh.tag)
+        STmesh = SpaceTimeMesh(mesh, [t, t+Δt], tag=mesh.tag)
         #v_guess = (new_xf - xf)/Δt
         #body = (xx, tt, _=0) -> xx - ( new_xf - v_guess * (tt - t) )
         body = (xx,tt, _=0)->(xx - new_xf) 
@@ -1188,7 +1206,8 @@ function solve_MovingLiquidDiffusionUnsteadyDiph!(s::Solver, phase1::Phase, phas
 
         Tᵢ = s.x
         push!(s.states, s.x)
-        println("Time : $(t[1])")
+        t += Δt
+        println("Time : $(t)")
         println("Max value : $(maximum(abs.(s.x)))")
         k += 1
     end

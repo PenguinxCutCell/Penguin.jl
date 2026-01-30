@@ -127,7 +127,7 @@ function VOFI(body::Function, mesh::AbstractMesh; compute_centroids::Bool = true
     else
         C_γ = Vector{SVector{N,Float64}}(undef, 0)
     end
-    C_γ = computeInterfaceCentroids(mesh, body)
+    #C_γ = computeInterfaceCentroids(mesh, body)
     return A, B, V, W, C_ω, C_γ, Γ, cell_types
 end
 

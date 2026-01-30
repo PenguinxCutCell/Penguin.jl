@@ -115,6 +115,21 @@ struct FluxJump <: AbstractInterfaceBC
     value::Union{Function,Float64}
 end
 
+
+"""
+    RobinJump(α::Union{Function,Float64}, β::Union{Function,Float64}, value::Union{Function,Float64})
+Structure to define Robin jump conditions. The value can be a constant or a function of the space variable.
+`α[[T]] + β∇T.n = g`
+- g = RobinJump(1.0, 0.0, 0.0) # Temperature continuity condition
+- g = RobinJump(1.0, x -> sin(x), 0.0) # Robin jump condition that depends on the space variable
+- g = RobinJump(1.0, (x, t) -> sin(x) * cos(t), 0.0) # Robin jump condition that depends on the space and time variables
+"""
+struct RobinJump <: AbstractInterfaceBC
+    α::Union{Function,Float64}
+    β::Union{Function,Float64}
+    value::Union{Function,Float64}
+end
+
 """
     BorderConditions(borders::Dict{Symbol, AbstractBoundary})
 

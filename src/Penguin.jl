@@ -36,6 +36,7 @@ export DiffusionOps, ConvectionOps
 include("boundary.jl")
 export AbstractBoundary, Dirichlet, Neumann, Robin, Periodic, Symmetry, Outflow, Traction
 export AbstractInterfaceBC, ScalarJump, FluxJump, BorderConditions, InterfaceConditions
+export RobinJump
 export GibbsThomson
 
 include("phase.jl")
